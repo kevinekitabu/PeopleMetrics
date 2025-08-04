@@ -1,9 +1,8 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
-import AuthModal from './AuthModal';
 import { toast } from 'react-hot-toast';
 
 interface SubscriptionCheckProps {
@@ -16,98 +15,104 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
   const [hasSubscription, setHasSubscription] = useState<boolean | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
 
-  // Define admin emails here for global access in function
-  const adminEmails = ['admin@gmail.com']; // <-- update with your admin email(s)
+  // Define admin emails - these users can access dashboard without subscription
+  const adminEmails = [
+    'admin@gmail.com',
+    'peoplemetricssolutions@gmail.com',
+    'michelle.gacigi@gmail.com'
+  ];
 
   useEffect(() => {
     const checkSubscriptionAndAdmin = async () => {
       try {
         if (!user) {
-          setShowAuthModal(true);
           setIsLoading(false);
           return;
         }
 
-        // Check if user is admin
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
-
-        // Fallback: allow access for known admin emails
-        let adminOverride = false;
+        // Check if user is admin by email first (primary check)
+        let isAdminUser = false;
         if (user.email && adminEmails.includes(user.email)) {
-          adminOverride = true;
+          isAdminUser = true;
+          console.log('Admin user detected by email:', user.email);
         }
 
-        if (profileError) {
-          if (retryCount < maxRetries) {
-            setTimeout(() => {
-              setRetryCount((prev) => prev + 1);
-            }, 1000 * (retryCount + 1));
-            return;
+        // Also check database profile for admin flag
+        try {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('is_admin')
+            .eq('id', user.id)
+            .single();
+
+          if (!profileError && profileData?.is_admin) {
+            isAdminUser = true;
+            console.log('Admin user detected by database flag');
           }
-          // If adminOverride, allow access
-          if (adminOverride) {
-            setIsAdmin(true);
-            setHasSubscription(true);
-            setIsLoading(false);
-            return;
+
+          // Update profile to mark as admin if they're in admin emails but not flagged
+          if (isAdminUser && !profileData?.is_admin) {
+            await supabase
+              .from('profiles')
+              .update({ is_admin: true })
+              .eq('id', user.id);
+            console.log('Updated profile to mark user as admin');
           }
-          throw profileError;
+        } catch (profileError) {
+          console.warn('Could not check/update profile, but continuing with email-based admin check:', profileError);
         }
 
-        setIsAdmin(profileData?.is_admin === true || adminOverride);
+        setIsAdmin(isAdminUser);
 
-        // If user is admin, skip subscription check and always allow access
-        if (profileData?.is_admin === true || adminOverride) {
+        // If user is admin, skip subscription check and allow access
+        if (isAdminUser) {
           setHasSubscription(true);
           setIsLoading(false);
+          console.log('Admin user granted access without subscription check');
           return;
         }
 
-        // Check for active subscription
-        const { data: subscriptionData, error: subscriptionError } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('status', 'active')
-          .gt('current_period_end', new Date().toISOString())
-          .maybeSingle();
+        // For non-admin users, check for active subscription
+        try {
+          const { data: subscriptionData, error: subscriptionError } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .gt('current_period_end', new Date().toISOString())
+            .maybeSingle();
 
-        if (subscriptionError) {
-          if (retryCount < maxRetries) {
-            setTimeout(() => {
-              setRetryCount((prev) => prev + 1);
-            }, 1000 * (retryCount + 1));
-            return;
+          if (subscriptionError) {
+            console.error('Error checking subscription:', subscriptionError);
+            if (retryCount < maxRetries) {
+              setTimeout(() => {
+                setRetryCount((prev) => prev + 1);
+              }, 1000 * (retryCount + 1));
+              return;
+            }
+            throw subscriptionError;
           }
-          throw subscriptionError;
+
+          const hasActiveSubscription = !!subscriptionData;
+          setHasSubscription(hasActiveSubscription);
+
+          if (!hasActiveSubscription) {
+            console.log('No active subscription found for user');
+          } else {
+            console.log('Active subscription found:', subscriptionData);
+          }
+        } catch (subscriptionError) {
+          console.error('Error checking subscription:', subscriptionError);
+          setHasSubscription(false);
         }
 
-        setHasSubscription(!!subscriptionData);
-
-        // If no subscription, notify and redirect to pricing
-        if (!subscriptionData) {
-          toast('You need an active subscription to access the dashboard. Redirecting to pricing...');
-          window.location.href = '/pricing';
-        }
       } catch (error) {
         console.error('Error checking subscription:', error);
-        // If adminOverride, allow access
-        if (user && user.email && adminEmails.includes(user.email)) {
-          setIsAdmin(true);
-          setHasSubscription(true);
-          setIsLoading(false);
-          return;
-        }
-        toast.error('Failed to verify subscription status. Please try refreshing the page.');
         setHasSubscription(false);
+        setIsAdmin(false);
       } finally {
         setIsLoading(false);
       }
@@ -118,18 +123,26 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Verifying access...</p>
+        </div>
       </div>
     );
   }
 
-  // Refine redirection logic to avoid loops
-  if (!user || (!hasSubscription && !isAdmin)) {
-    if (location.pathname !== '/') {
-      window.location.href = '/'; // Redirect to the landing page only if not already there
+  // If no user, redirect to login
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // If user doesn't have subscription and is not admin, redirect to landing page
+  if (!hasSubscription && !isAdmin) {
+    if (location.pathname === '/dashboard') {
+      toast.error('You need an active subscription to access the dashboard.');
+      return <Navigate to="/" replace />;
     }
-    return null; // Prevent rendering anything else
   }
 
   return <>{children}</>;

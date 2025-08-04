@@ -470,6 +470,7 @@ function Dashboard() {
   const handleSignOut = async () => {
     try {
       await signOut();
+      // Navigation is handled by AuthProvider
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Failed to sign out');

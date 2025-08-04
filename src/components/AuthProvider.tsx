@@ -37,7 +37,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       setUser(null);
 
       // Attempt to sign out from Supabase
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.warn('Supabase sign out error (non-critical):', error);
+      }
       
       // Navigate to home page
       navigate('/', { replace: true });
@@ -48,6 +51,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       setSession(null);
       setUser(null);
       navigate('/', { replace: true });
+      toast.success('Signed out successfully');
     }
   };
 
@@ -99,15 +103,25 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           if (newSession) {
             setSession(newSession);
             setUser(newSession.user);
-            navigate('/dashboard');
-            toast.success(`Welcome${newSession.user?.email ? ` ${newSession.user.email}` : ''}!`);
+            
+            // Don't auto-navigate if already on dashboard or if coming from login
+            if (location.pathname !== '/dashboard' && location.pathname !== '/login') {
+              navigate('/dashboard');
+            }
+            
+            const welcomeMessage = newSession.user?.email 
+              ? `Welcome back, ${newSession.user.email.split('@')[0]}!`
+              : 'Welcome back!';
+            toast.success(welcomeMessage);
           }
           break;
         case 'SIGNED_OUT':
           localStorage.removeItem('supabase.auth.token');
           setSession(null);
           setUser(null);
-          navigate('/', { replace: true });
+          if (location.pathname === '/dashboard') {
+            navigate('/', { replace: true });
+          }
           break;
         case 'TOKEN_REFRESHED':
           if (newSession) {
@@ -119,8 +133,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           if (newSession) {
             setSession(newSession);
             setUser(newSession.user);
-            toast.success('Profile updated');
           }
+          break;
+        case 'PASSWORD_RECOVERY':
+          toast.success('Password recovery email sent');
           break;
       }
       

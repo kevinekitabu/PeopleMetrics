@@ -68,6 +68,7 @@ export default function Login() {
         
         toast.success('Password reset instructions have been sent to your email');
         setResetPassword(false);
+        setEmail('');
         return;
       }
 
@@ -78,15 +79,24 @@ export default function Login() {
         });
 
         if (error) {
-          if (error.message === 'Invalid login credentials') {
-            toast.error('Invalid email or password. Please check your credentials or use the password reset option.');
+          console.error('Login error:', error);
+          
+          if (error.message.includes('Invalid login credentials') || 
+              error.message.includes('Email not confirmed') ||
+              error.message.includes('Invalid email or password')) {
+            toast.error('Invalid email or password. Please check your credentials and try again.');
+          } else if (error.message.includes('Email not confirmed')) {
+            toast.error('Please check your email and confirm your account before signing in.');
+          } else if (error.message.includes('Too many requests')) {
+            toast.error('Too many login attempts. Please wait a moment and try again.');
           } else {
-            toast.error(error.message);
+            toast.error('Login failed. Please try again or contact support.');
           }
           return;
         }
 
         if (data?.user) {
+          console.log('Login successful for user:', data.user.email);
           navigate(from, { replace: true });
         }
       } else {
@@ -94,30 +104,47 @@ export default function Login() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            data: {
+              email_confirm: false // Disable email confirmation for faster signup
+            }
           }
         });
 
         if (error) {
+          console.error('Signup error:', error);
+          
           if (error.message.includes('already registered')) {
             toast.error('An account with this email already exists. Please try logging in instead.');
             setMode('login');
+          } else if (error.message.includes('Password should be at least')) {
+            toast.error('Password must be at least 6 characters long.');
+          } else if (error.message.includes('Unable to validate email address')) {
+            toast.error('Please enter a valid email address.');
           } else {
-            toast.error(error.message);
+            toast.error('Account creation failed. Please try again.');
           }
           return;
         }
 
         if (data.user) {
-          toast.success('Account created successfully! You can now log in.');
-          setMode('login');
-          setEmail('');
-          setPassword('');
+          console.log('Signup successful for user:', data.user.email);
+          
+          if (data.session) {
+            // User is automatically signed in
+            toast.success('Account created successfully! Welcome!');
+            navigate(from, { replace: true });
+          } else {
+            // User needs to confirm email
+            toast.success('Account created! Please check your email to confirm your account.');
+            setMode('login');
+            setPassword('');
+          }
         }
       }
     } catch (error: any) {
-      toast.error('An unexpected error occurred. Please try again.');
-      console.error('Error:', error);
+      console.error('Authentication error:', error);
+      toast.error('An unexpected error occurred. Please check your internet connection and try again.');
     } finally {
       setIsLoading(false);
     }
