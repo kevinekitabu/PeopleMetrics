@@ -10,77 +10,7 @@ import TypingAnimation from '../components/TypingAnimation';
 import { Link } from 'react-router-dom';
 import { generateAndDownloadDocx } from '../utils/documentGenerator';
 import ThemeToggle from '../components/ThemeToggle';
-import { useLocalStorage } from '../utils/localStorage';
 import SuperAdminView from '../components/SuperAdminView';
-
-const Tour = ({ onClose }: { onClose: () => void }) => {
-  const [step, setStep] = useState(0);
-
-  const steps = [
-    {
-      title: 'Welcome to the Dashboard!',
-      description: 'This is your main hub for managing reports and files.',
-      target: null,
-    },
-    {
-      title: 'Upload Files',
-      description: 'Drag and drop files here to upload and start generating reports.',
-      target: '.dropzone',
-    },
-    {
-      title: 'Reports List',
-      description: 'View and manage your reports here. You can edit, regenerate, or delete them.',
-      target: '.reports-list',
-    },
-    {
-      title: 'Theme Toggle',
-      description: 'Switch between light and dark mode using this toggle.',
-      target: '.theme-toggle',
-    },
-    {
-      title: 'Sign Out',
-      description: 'Click here to sign out of your account.',
-      target: '.sign-out-button',
-    },
-  ];
-
-  const currentStep = steps[step];
-
-  const handleNext = () => {
-    if (step < steps.length - 1) {
-      setStep(step + 1);
-    } else {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="tour-overlay">
-      <div className="tour-content" style={{ position: 'relative' }}>
-        <h2>{currentStep.title}</h2>
-        <p>{currentStep.description}</p>
-        <button onClick={handleNext}>
-          {step < steps.length - 1 ? 'Next' : 'Finish'}
-        </button>
-      </div>
-      {currentStep.target && (
-        <div
-          className="tour-highlight"
-          style={{
-            position: 'absolute',
-            border: '2px solid #4F46E5',
-            borderRadius: '8px',
-            padding: '4px',
-            backgroundColor: 'rgba(79, 70, 229, 0.1)',
-            zIndex: 1000,
-          }}
-        >
-          {/* Highlight logic can be implemented here */}
-        </div>
-      )}
-    </div>
-  );
-};
 
 interface Report {
   id: string;
@@ -156,20 +86,6 @@ function Dashboard() {
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminCheckLoading, setAdminCheckLoading] = useState(true);
-
-  const [isFirstTime, setIsFirstTime] = useLocalStorage('isFirstTimeUser', true);
-  const [showTour, setShowTour] = useState(false);
-
-  useEffect(() => {
-    if (isFirstTime) {
-      setShowTour(true);
-    }
-  }, [isFirstTime]);
-
-  const handleCloseTour = () => {
-    setShowTour(false);
-    setIsFirstTime(false);
-  };
 
   // Check if user is admin
   useEffect(() => {
@@ -615,7 +531,6 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[rgb(var(--background))]">
-      {showTour && <Tour onClose={handleCloseTour} />}
       <nav className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
