@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { generateAndDownloadDocx } from '../utils/documentGenerator';
 import ThemeToggle from '../components/ThemeToggle';
 import { useLocalStorage } from '../utils/localStorage';
+import SuperAdminView from '../components/SuperAdminView';
 
 const Tour = ({ onClose }: { onClose: () => void }) => {
   const [step, setStep] = useState(0);
@@ -152,6 +153,8 @@ function Dashboard() {
   const [editDescription, setEditDescription] = useState('');
   const reportRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const processingReports = useRef<Set<string>>(new Set());
+  const [showSuperAdmin, setShowSuperAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [isFirstTime, setIsFirstTime] = useLocalStorage('isFirstTimeUser', true);
   const [showTour, setShowTour] = useState(false);
@@ -166,6 +169,29 @@ function Dashboard() {
     setShowTour(false);
     setIsFirstTime(false);
   };
+
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (!user) return;
+      
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+
+        if (!error && profile) {
+          setIsAdmin(profile.is_admin || false);
+        }
+      } catch (error) {
+        console.error('Error checking admin status:', error);
+      }
+    };
+
+    checkAdminStatus();
+  }, [user]);
 
   const handleStopGeneration = async (report: Report) => {
     try {
@@ -554,6 +580,18 @@ function Dashboard() {
             <div className="flex items-center space-x-4">
               <ThemeToggle />
               <span className="text-gray-600 dark:text-gray-300">{user?.email}</span>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowSuperAdmin(!showSuperAdmin)}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    showSuperAdmin
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-purple-600 text-white hover:bg-purple-700'
+                  }`}
+                >
+                  {showSuperAdmin ? 'Exit Admin View' : 'Super Admin'}
+                </button>
+              )}
               <button
                 onClick={handleSignOut}
                 className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 sign-out-button"
@@ -566,6 +604,10 @@ function Dashboard() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {showSuperAdmin && isAdmin ? (
+          <SuperAdminView />
+        ) : (
+          <>
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-lg p-8 mb-8 text-center cursor-pointer transition-all dropzone
@@ -813,6 +855,8 @@ function Dashboard() {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </main>
     </div>
