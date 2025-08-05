@@ -22,7 +22,8 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
   const adminEmails = [
     'admin@gmail.com',
     'peoplemetricssolutions@gmail.com',
-    'michelle.gacigi@gmail.com'
+    'michelle.gacigi@gmail.com',
+    'superadmin@mail.com'
   ];
 
   useEffect(() => {
