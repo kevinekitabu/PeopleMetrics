@@ -61,11 +61,6 @@ export default function Landing() {
   };
 
   const handleDashboardClick = () => {
-    // Fix: Check for user existence and show toast using correct method
-    if (!user) {
-      toast('Please select a plan to access the dashboard.');
-      return;
-    }
     navigate('/dashboard');
   };
 

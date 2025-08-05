@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
+import SubscriptionCheck from './SubscriptionCheck';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, session } = useAuth();
@@ -21,5 +22,9 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     return <Navigate to="/" state={{ from: location }} replace />;
   }
 
-  return <>{children}</>;
+  return (
+    <SubscriptionCheck>
+      {children}
+    </SubscriptionCheck>
+  );
 }

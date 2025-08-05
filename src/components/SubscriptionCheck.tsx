@@ -140,10 +140,24 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
 
   // If user doesn't have subscription and is not admin, redirect to landing page
   if (!hasSubscription && !isAdmin) {
-    if (location.pathname === '/dashboard') {
-      toast.error('You need an active subscription to access the dashboard.');
-      return <Navigate to="/" replace />;
-    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md max-w-md w-full text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            Subscription Required
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            You need an active subscription to access the dashboard. Please select a plan to continue.
+          </p>
+          <button
+            onClick={() => window.location.href = '/'}
+            className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            View Plans
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;
