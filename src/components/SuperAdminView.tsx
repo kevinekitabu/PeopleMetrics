@@ -145,36 +145,16 @@ export default function SuperAdminView() {
 
       if (profilesError) throw profilesError;
 
-      // Get user details from auth.users (this might need to be done via an edge function in production)
-      const { data: usersData, error: usersError } = await supabase.auth.admin.listUsers();
+      // For now, we'll use profile data only since auth.admin requires service role
+      const usersFromProfiles = profilesData?.map(profile => ({
+        id: profile.id,
+        email: `User ${profile.id.slice(0, 8)}`, // Show partial ID instead of email for privacy
+        created_at: profile.created_at,
+        last_sign_in_at: 'N/A',
+        is_admin: profile.is_admin
+      })) || [];
       
-      if (usersError) {
-        console.warn('Could not fetch user details from auth.users:', usersError);
-        // Fallback to profiles data only
-        const usersFromProfiles = profilesData?.map(profile => ({
-          id: profile.id,
-          email: 'Email not available',
-          created_at: profile.created_at,
-          last_sign_in_at: '',
-          is_admin: profile.is_admin
-        })) || [];
-        setUsers(usersFromProfiles);
-        return;
-      }
-
-      // Combine profile and auth data
-      const combinedUsers = profilesData?.map(profile => {
-        const authUser = usersData.users.find(u => u.id === profile.id);
-        return {
-          id: profile.id,
-          email: authUser?.email || 'Unknown',
-          created_at: profile.created_at,
-          last_sign_in_at: authUser?.last_sign_in_at || '',
-          is_admin: profile.is_admin
-        };
-      }) || [];
-
-      setUsers(combinedUsers);
+      setUsers(usersFromProfiles);
     } catch (error) {
       console.error('Error loading users:', error);
       toast.error('Failed to load users');
@@ -185,33 +165,18 @@ export default function SuperAdminView() {
     try {
       const { data, error } = await supabase
         .from('subscriptions')
-        .select(`
-          *,
-          profiles!inner(id)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      // Get user emails for subscriptions
-      const subscriptionsWithEmails = await Promise.all(
-        (data || []).map(async (sub) => {
-          try {
-            const { data: userData } = await supabase.auth.admin.getUserById(sub.user_id);
-            return {
-              ...sub,
-              user_email: userData.user?.email || 'Unknown'
-            };
-          } catch {
-            return {
-              ...sub,
-              user_email: 'Unknown'
-            };
-          }
-        })
-      );
-
-      setSubscriptions(subscriptionsWithEmails);
+      // Add user identifier for subscriptions
+      const subscriptionsWithUserInfo = (data || []).map(sub => ({
+        ...sub,
+        user_email: `User ${sub.user_id.slice(0, 8)}` // Show partial user ID for privacy
+      }));
+      
+      setSubscriptions(subscriptionsWithUserInfo);
     } catch (error) {
       console.error('Error loading subscriptions:', error);
       toast.error('Failed to load subscriptions');
@@ -244,25 +209,13 @@ export default function SuperAdminView() {
 
       if (error) throw error;
 
-      // Get user emails for reports
-      const reportsWithEmails = await Promise.all(
-        (data || []).map(async (report) => {
-          try {
-            const { data: userData } = await supabase.auth.admin.getUserById(report.user_id);
-            return {
-              ...report,
-              user_email: userData.user?.email || 'Unknown'
-            };
-          } catch {
-            return {
-              ...report,
-              user_email: 'Unknown'
-            };
-          }
-        })
-      );
-
-      setReports(reportsWithEmails);
+      // Add user identifier for reports
+      const reportsWithUserInfo = (data || []).map(report => ({
+        ...report,
+        user_email: `User ${report.user_id.slice(0, 8)}` // Show partial user ID for privacy
+      }));
+      
+      setReports(reportsWithUserInfo);
     } catch (error) {
       console.error('Error loading reports:', error);
       toast.error('Failed to load reports');

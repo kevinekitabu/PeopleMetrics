@@ -155,6 +155,7 @@ function Dashboard() {
   const processingReports = useRef<Set<string>>(new Set());
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminCheckLoading, setAdminCheckLoading] = useState(true);
 
   const [isFirstTime, setIsFirstTime] = useLocalStorage('isFirstTimeUser', true);
   const [showTour, setShowTour] = useState(false);
@@ -175,18 +176,66 @@ function Dashboard() {
     const checkAdminStatus = async () => {
       if (!user) return;
       
+      setAdminCheckLoading(true);
+      
+      // Admin emails that should have admin access
+      const adminEmails = [
+        'admin@gmail.com',
+        'peoplemetricssolutions@gmail.com',
+        'michelle.gacigi@gmail.com',
+        'superadmin@mail.com'
+      ];
+      
+      // Check if user email is in admin list
+      const isAdminByEmail = user.email && adminEmails.includes(user.email);
+      
       try {
+        // Check database profile
         const { data: profile, error } = await supabase
           .from('profiles')
           .select('is_admin')
           .eq('id', user.id)
           .single();
 
+        let isAdminUser = false;
+        
         if (!error && profile) {
-          setIsAdmin(profile.is_admin || false);
+          isAdminUser = profile.is_admin || isAdminByEmail;
+        } else {
+          // If profile doesn't exist or error, use email check
+          isAdminUser = isAdminByEmail || false;
         }
+        
+        // Update profile if user should be admin but isn't flagged
+        if (isAdminByEmail && (!profile || !profile.is_admin)) {
+          try {
+            await supabase
+              .from('profiles')
+              .upsert({ 
+                id: user.id, 
+                is_admin: true,
+                updated_at: new Date().toISOString()
+              });
+            console.log('Updated user profile to admin status');
+          } catch (updateError) {
+            console.warn('Could not update profile, but user is admin by email:', updateError);
+          }
+        }
+        
+        setIsAdmin(isAdminUser);
+        console.log('Admin status check:', { 
+          email: user.email, 
+          isAdminByEmail, 
+          profileAdmin: profile?.is_admin, 
+          finalStatus: isAdminUser 
+        });
+        
       } catch (error) {
         console.error('Error checking admin status:', error);
+        // Fallback to email check if database fails
+        setIsAdmin(isAdminByEmail || false);
+      } finally {
+        setAdminCheckLoading(false);
       }
     };
 
@@ -580,7 +629,9 @@ function Dashboard() {
             <div className="flex items-center space-x-4">
               <ThemeToggle />
               <span className="text-gray-600 dark:text-gray-300">{user?.email}</span>
-              {isAdmin && (
+              {adminCheckLoading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+              ) : isAdmin && (
                 <button
                   onClick={() => setShowSuperAdmin(!showSuperAdmin)}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
