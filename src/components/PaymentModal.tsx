@@ -62,7 +62,6 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out. Please try again.');
             return 0;
-          }
           return prev - 1;
         });
       }, 1000);
