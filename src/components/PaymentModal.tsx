@@ -103,7 +103,8 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       amount: selectedPlan.price,
       plan: selectedPlan.name,
       interval: selectedPlan.interval,
-      userId: user.id
+      userId: user.id,
+      userEmail: user.email
     });
 
     try {
@@ -128,12 +129,14 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           plan: selectedPlan.name,
           interval: selectedPlan.interval,
           userId: user.id
+          userId: user.id
         })
       });
 
       if (!response.ok) {
         console.error('Payment initiation failed:', response.status, response.statusText);
         const errorData = await response.json();
+        console.error('Error details:', errorData);
         throw new Error(errorData.error || 'Payment failed');
       }
 
