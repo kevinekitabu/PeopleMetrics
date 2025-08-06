@@ -296,9 +296,18 @@ function Dashboard() {
           : r
       ));
 
-      // Auto-expand the completed report
+      // Auto-expand the completed report and highlight it
       setExpandedReports(prev => new Set([...prev, report.id]));
       setHighlightedReport(report.id);
+      
+      // Clean up progress after a short delay to show 100%
+      setTimeout(() => {
+        setGenerationProgress(prev => {
+          const newProgress = { ...prev };
+          delete newProgress[report.id];
+          return newProgress;
+        });
+      }, 2000);
       
       setTimeout(() => {
         reportRefs.current[report.id]?.scrollIntoView({ 
@@ -774,68 +783,56 @@ function Dashboard() {
                             className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
                             disabled={report.is_generating}
                           >
-                            {report.is_generating ? (
-                              <div className="flex flex-col items-start space-y-2">
-                                <div className="flex items-center space-x-2">
-                                  <TypingAnimation text={`Generating... ${generationProgress[report.id] || 0}%`} />
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleStopGeneration(report);
-                                    }}
-                                    className="ml-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                  >
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                  </button>
-                                </div>
-                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                                  <div 
-                                    className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                                    style={{ width: `${generationProgress[report.id] || 0}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            ) : (
-                              'Regenerate'
-                            )}
+                            Regenerate
                           </button>
                         )}
                       </div>
                     </>
                   ) : (
-                    <div className="flex items-center justify-between">
+                    <div className="space-y-3">
                       {report.is_generating ? (
-                        <div className="flex flex-col items-start space-y-2 flex-1">
+                        <div className="space-y-3">
                           <div className="flex items-center space-x-2">
-                            <TypingAnimation text={`Generating report... ${generationProgress[report.id] || 0}%`} />
+                            <div className="flex items-center space-x-2 flex-1">
+                              <div className="flex space-x-1">
+                                <div className="w-2 h-2 bg-indigo-600 dark:bg-indigo-400 rounded-full animate-bounce" 
+                                     style={{ animationDelay: '0ms', animationDuration: '600ms' }}></div>
+                                <div className="w-2 h-2 bg-indigo-600 dark:bg-indigo-400 rounded-full animate-bounce" 
+                                     style={{ animationDelay: '150ms', animationDuration: '600ms' }}></div>
+                                <div className="w-2 h-2 bg-indigo-600 dark:bg-indigo-400 rounded-full animate-bounce" 
+                                     style={{ animationDelay: '300ms', animationDuration: '600ms' }}></div>
+                              </div>
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
+                                Generating report... {Math.round(generationProgress[report.id] || 0)}%
+                              </span>
+                            </div>
                             <button
                               onClick={() => handleStopGeneration(report)}
-                              className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                              className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-1"
+                              title="Stop Generation"
                             >
                               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                             </button>
                           </div>
-                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
                             <div 
-                              className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                              className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
                               style={{ width: `${generationProgress[report.id] || 0}%` }}
                             ></div>
                           </div>
                         </div>
                       ) : (
-                        <>
-                          <span className="text-gray-600 dark:text-gray-300">No report generated yet</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-300">No report generated yet</span>
                           <button
                             onClick={() => handleGenerateReport(report)}
                             className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
                           >
                             Generate Report
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   )}
