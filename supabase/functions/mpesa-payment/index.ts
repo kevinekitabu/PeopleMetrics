@@ -1,5 +1,5 @@
-import { Buffer } from 'buffer';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
+import { Buffer } from 'npm:buffer@6.0.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,8 +16,8 @@ const MPESA_SHORTCODE = '174379';
 const MPESA_PASSKEY = 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
 
 const supabase = createClient(
-  process.env.SUPABASE_URL ?? '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   {
     auth: {
       autoRefreshToken: false,
@@ -56,9 +56,7 @@ async function getAccessToken(): Promise<string> {
   }
 }
 
-import { serve } from "https://deno.land/std@0.203.0/http/server.ts";
-
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -76,7 +74,7 @@ serve(async (req) => {
       throw new Error('Invalid phone number format. Must start with 254 followed by 9 digits');
     }
 
-    console.log('Processing payment request:', { phoneNumber, amount, plan, interval });
+    console.log('Processing payment request:', { phoneNumber, amount, plan, interval, userId });
 
     // Get fresh access token
     const access_token = await getAccessToken();
@@ -90,7 +88,7 @@ serve(async (req) => {
     const password = Buffer.from(`${MPESA_SHORTCODE}${MPESA_PASSKEY}${timestamp}`).toString('base64');
 
     // Construct callback URL with the Supabase project URL
-    const callbackUrl = `${process.env.SUPABASE_URL}/functions/v1/mpesa-callback`;
+    const callbackUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/mpesa-callback`;
     console.log('Using callback URL:', callbackUrl);
 
     // Initiate STK Push
@@ -146,8 +144,16 @@ serve(async (req) => {
       throw subscriptionError;
     }
 
+    console.log('Payment initiated successfully, subscription record created');
+
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify({
+        CheckoutRequestID: data.CheckoutRequestID,
+        MerchantRequestID: data.MerchantRequestID,
+        ResponseCode: data.ResponseCode,
+        ResponseDescription: data.ResponseDescription,
+        CustomerMessage: data.CustomerMessage
+      }),
       {
         headers: {
           'Content-Type': 'application/json',

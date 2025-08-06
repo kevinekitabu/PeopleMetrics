@@ -17,13 +17,13 @@ type PaymentStatus = 'idle' | 'processing' | 'completed' | 'failed';
 
 export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentModalProps) {
   const { user } = useAuth();
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'mpesa'>('mpesa');
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(120); // 2 minutes countdown
   const MAX_POLL_ATTEMPTS = 24; // 2 minutes (5 seconds * 24)
 
   // Cleanup polling on unmount or when payment completes/fails
@@ -43,12 +43,33 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setPhoneNumber('');
       setCheckoutRequestId(null);
       setPollCount(0);
+      setTimeRemaining(120);
       if (pollInterval) {
         clearInterval(pollInterval);
         setPollInterval(null);
       }
     }
   }, [isOpen, pollInterval]);
+
+  // Countdown timer effect
+  useEffect(() => {
+    let countdownInterval: NodeJS.Timeout | null = null;
+    
+    if (paymentStatus === 'processing' && timeRemaining > 0) {
+      countdownInterval = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 1) {
+            setPaymentStatus('failed');
+            setStatusMessage('Payment request timed out. Please try again.');
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    
+    return () => countdownInterval && clearInterval(countdownInterval);
+  }, [paymentStatus, timeRemaining]);
 
   if (!isOpen || !user) return null;
 
@@ -88,6 +109,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
     try {
       setPaymentStatus('processing');
       setStatusMessage('Initiating M-Pesa payment...');
+      setTimeRemaining(120); // Reset countdown
 
       // Format phone number if needed
       const formattedPhone = phoneNumber.startsWith('254') ? phoneNumber : `254${phoneNumber.replace(/^0+/, '')}`;
@@ -110,6 +132,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       });
 
       if (!response.ok) {
+        console.error('Payment initiation failed:', response.status, response.statusText);
         const errorData = await response.json();
         throw new Error(errorData.error || 'Payment failed');
       }
@@ -118,6 +141,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       console.log('M-Pesa payment initiated:', data);
 
       if (!data.CheckoutRequestID) {
+        console.error('No CheckoutRequestID in response:', data);
         throw new Error('Invalid response from M-Pesa');
       }
 
@@ -126,6 +150,8 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       toast.success('M-Pesa payment request sent. Check your phone for the STK push.', {
         duration: 10000 // Show for 10 seconds
       });
+
+      console.log('Starting payment status polling for:', data.CheckoutRequestID);
 
       // Poll for payment status
       const interval = setInterval(async () => {
@@ -136,6 +162,8 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
         try {
           setPollCount(prev => prev + 1);
+          const currentPollCount = pollCount + 1;
+          console.log(`Payment status check #${currentPollCount} for:`, data.CheckoutRequestID);
 
           const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-status`, {
             method: 'POST',
@@ -148,13 +176,15 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           });
 
           if (!statusResponse.ok) {
-            throw new Error('Failed to check payment status');
+            console.error('Status check failed:', statusResponse.status, statusResponse.statusText);
+            throw new Error(`Failed to check payment status: ${statusResponse.status}`);
           }
 
           const { status, message } = await statusResponse.json();
-          console.log('Payment status check:', { status, message, pollCount: pollCount + 1 });
+          console.log('Payment status response:', { status, message, pollCount: currentPollCount, timeRemaining });
 
           if (status === 'COMPLETED') {
+            console.log('Payment completed successfully');
             clearInterval(interval);
             setPollInterval(null);
             setPaymentStatus('completed');
@@ -163,21 +193,30 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             // Update user's subscription
             const { error: supabaseError } = await supabase
               .from('subscriptions')
-              .insert({
+              .upsert({
+                checkout_request_id: data.CheckoutRequestID,
+                user_id: user.id,
                 plan: selectedPlan.name,
                 interval: selectedPlan.interval,
                 status: 'active',
                 current_period_end: new Date(Date.now() + (selectedPlan.interval === 'month' ? 30 : 365) * 24 * 60 * 60 * 1000)
+              }, {
+                onConflict: 'checkout_request_id'
               });
 
-            if (supabaseError) throw supabaseError;
+            if (supabaseError) {
+              console.error('Error updating subscription:', supabaseError);
+              throw supabaseError;
+            }
 
+            console.log('Subscription updated successfully');
             toast.success('Payment successful! Your subscription is now active.');
             setTimeout(() => onClose(), 2000);
             return;
           } 
           
           if (status === 'FAILED') {
+            console.log('Payment failed:', message);
             clearInterval(interval);
             setPollInterval(null);
             setPaymentStatus('failed');
@@ -187,10 +226,13 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           }
 
           // Update message for pending status
-          setStatusMessage(message || 'Waiting for payment confirmation...');
+          const minutes = Math.floor(timeRemaining / 60);
+          const seconds = timeRemaining % 60;
+          setStatusMessage(`${message || 'Waiting for payment confirmation...'} (${minutes}:${seconds.toString().padStart(2, '0')} remaining)`);
 
           // Check if we've exceeded maximum poll attempts
-          if (pollCount + 1 >= MAX_POLL_ATTEMPTS) {
+          if (currentPollCount >= MAX_POLL_ATTEMPTS || timeRemaining <= 0) {
+            console.log('Polling timeout reached');
             clearInterval(interval);
             setPollInterval(null);
             setPaymentStatus('failed');
@@ -200,11 +242,14 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           }
 
         } catch (error) {
-          console.error('Error checking payment status:', error);
-          setStatusMessage('Checking payment status...');
+          console.error('Error during status check:', error);
+          const minutes = Math.floor(timeRemaining / 60);
+          const seconds = timeRemaining % 60;
+          setStatusMessage(`Checking payment status... (${minutes}:${seconds.toString().padStart(2, '0')} remaining)`);
           
           // Only stop polling if we've exceeded max attempts
-          if (pollCount + 1 >= MAX_POLL_ATTEMPTS) {
+          if (pollCount + 1 >= MAX_POLL_ATTEMPTS || timeRemaining <= 0) {
+            console.log('Polling stopped due to timeout or max attempts');
             clearInterval(interval);
             setPollInterval(null);
             setPaymentStatus('failed');
@@ -222,6 +267,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setStatusMessage(error instanceof Error ? error.message : 'Payment failed');
       toast.error(error instanceof Error ? error.message : 'Payment failed');
     }
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const getStatusColor = () => {
@@ -300,7 +351,18 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         ) : (
           <div className="text-center py-4">
             {paymentStatus === 'processing' && (
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 dark:border-yellow-400 mx-auto mb-4"></div>
+              <div className="space-y-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400 dark:border-yellow-400 mx-auto"></div>
+                <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-yellow-400 h-full transition-all duration-1000 ease-linear"
+                    style={{ width: `${((120 - timeRemaining) / 120) * 100}%` }}
+                  ></div>
+                </div>
+                <div className="text-sm text-blue-600 dark:text-yellow-300">
+                  Time remaining: {formatTime(timeRemaining)}
+                </div>
+              </div>
             )}
             {paymentStatus === 'completed' && (
               <div className="text-green-500 dark:text-yellow-400 text-5xl mb-4">✓</div>
@@ -316,6 +378,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                   setStatusMessage('');
                   setCheckoutRequestId(null);
                   setPollCount(0);
+                  setTimeRemaining(120);
                 }}
                 className="mt-4 px-4 py-2 bg-yellow-400 text-blue-900 font-semibold rounded-lg hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 transition-all"
               >

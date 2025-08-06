@@ -57,25 +57,28 @@ async function getAccessToken(): Promise<string> {
   }
 }
 
-async function checkCallbackStatus(CheckoutRequestID: string): Promise<{ status: string; message: string; } | null> {
+async function checkDatabaseStatus(CheckoutRequestID: string): Promise<{ status: string; message: string; } | null> {
   try {
+    console.log('Checking database status for:', CheckoutRequestID);
+
     // First check subscription status
     const { data: subscriptionData, error: subscriptionError } = await supabase
       .from('subscriptions')
-      .select('status')
+      .select('status, plan, interval')
       .eq('checkout_request_id', CheckoutRequestID)
       .single();
 
     if (subscriptionError) {
-      console.error('Error checking subscription status:', subscriptionError);
+      console.log('No subscription found or error:', subscriptionError.message);
     } else if (subscriptionData?.status === 'active') {
+      console.log('Found active subscription in database');
       return { status: 'COMPLETED', message: 'Payment completed successfully' };
     }
 
     // Then check M-Pesa callbacks
     const { data: callbackData, error: callbackError } = await supabase
       .from('mpesa_callbacks')
-      .select('result_code, result_desc')
+      .select('result_code, result_desc, created_at')
       .eq('checkout_request_id', CheckoutRequestID)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -83,7 +86,7 @@ async function checkCallbackStatus(CheckoutRequestID: string): Promise<{ status:
 
     if (callbackError) {
       if (callbackError.code === 'PGRST116') {
-        // No callback found yet
+        console.log('No callback found yet');
         return null;
       }
       console.error('Error checking callback status:', callbackError);
@@ -91,6 +94,7 @@ async function checkCallbackStatus(CheckoutRequestID: string): Promise<{ status:
     }
 
     if (callbackData) {
+      console.log('Found callback data:', callbackData);
       if (callbackData.result_code === 0) {
         return { status: 'COMPLETED', message: 'Payment completed successfully' };
       } else {
@@ -103,7 +107,7 @@ async function checkCallbackStatus(CheckoutRequestID: string): Promise<{ status:
 
     return null;
   } catch (error) {
-    console.error('Error checking status:', error);
+    console.error('Error checking database status:', error);
     return null;
   }
 }
@@ -120,10 +124,10 @@ Deno.serve(async (req) => {
       throw new Error('CheckoutRequestID is required');
     }
 
-    console.log('Checking status for:', CheckoutRequestID);
+    console.log('Checking payment status for:', CheckoutRequestID);
 
-    // First check database status
-    const dbStatus = await checkCallbackStatus(CheckoutRequestID);
+    // First check database status (callbacks and subscriptions)
+    const dbStatus = await checkDatabaseStatus(CheckoutRequestID);
     if (dbStatus) {
       console.log('Found status in database:', dbStatus);
       return new Response(
@@ -137,15 +141,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    // If no database status, query M-Pesa
+    // If no database status, query M-Pesa API directly
+    console.log('No database status found, querying M-Pesa API');
+
     const timestamp = new Date().toISOString()
       .replace(/[^0-9]/g, '')
       .slice(0, 14);
 
     const password = Buffer.from(`${MPESA_SHORTCODE}${MPESA_PASSKEY}${timestamp}`).toString('base64');
-    const accessToken = await getAccessToken();
-
-    console.log('Querying M-Pesa API for status');
+    
+    let accessToken;
+    try {
+      accessToken = await getAccessToken();
+    } catch (authError) {
+      console.error('Failed to get access token:', authError);
+      return new Response(
+        JSON.stringify({ 
+          status: 'PENDING', 
+          message: 'Checking payment status...' 
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        }
+      );
+    }
 
     const queryResponse = await fetch(MPESA_QUERY_URL, {
       method: 'POST',
@@ -162,14 +184,14 @@ Deno.serve(async (req) => {
     });
 
     const responseText = await queryResponse.text();
-    console.log('Raw M-Pesa response:', responseText);
+    console.log('M-Pesa query response:', responseText);
 
     if (!queryResponse.ok) {
       console.error('M-Pesa query error:', responseText);
       return new Response(
         JSON.stringify({ 
           status: 'PENDING', 
-          message: 'Payment is being processed' 
+          message: 'Payment is being processed...' 
         }),
         {
           headers: {
@@ -183,12 +205,12 @@ Deno.serve(async (req) => {
     let mpesaData;
     try {
       mpesaData = JSON.parse(responseText);
-    } catch (error) {
-      console.error('Error parsing M-Pesa response:', error);
+    } catch (parseError) {
+      console.error('Error parsing M-Pesa response:', parseError);
       return new Response(
         JSON.stringify({ 
           status: 'PENDING', 
-          message: 'Payment is being processed' 
+          message: 'Payment is being processed...' 
         }),
         {
           headers: {
@@ -202,7 +224,7 @@ Deno.serve(async (req) => {
     console.log('Parsed M-Pesa response:', mpesaData);
 
     let status = 'PENDING';
-    let message = 'Payment is being processed';
+    let message = 'Payment is being processed...';
 
     // Check for specific response codes
     if (mpesaData.ResultCode === 0 || mpesaData.ResultCode === '0') {
@@ -214,21 +236,20 @@ Deno.serve(async (req) => {
     } else if (mpesaData.errorCode === '500.001.1001') {
       status = 'FAILED';
       message = 'Payment request has expired';
-    } else if (mpesaData.ResultCode) {
+    } else if (mpesaData.ResultCode && mpesaData.ResultCode !== 0) {
       status = 'FAILED';
       message = mpesaData.ResultDesc || 'Payment failed';
     } else if (mpesaData.errorMessage) {
-      // Handle API error messages
       if (mpesaData.errorMessage.includes('Invalid Access Token')) {
         status = 'PENDING';
-        message = 'Verifying payment status';
+        message = 'Verifying payment status...';
       } else {
         status = 'FAILED';
         message = mpesaData.errorMessage;
       }
     }
 
-    console.log('Determined status:', { status, message });
+    console.log('Final status determination:', { status, message });
 
     return new Response(
       JSON.stringify({ status, message }),
@@ -242,11 +263,10 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Status check error:', error);
     
-    // Return pending status for any errors to allow retrying
     return new Response(
       JSON.stringify({
         status: 'PENDING',
-        message: 'Payment status check is in progress'
+        message: 'Payment status check is in progress...'
       }),
       {
         headers: {
