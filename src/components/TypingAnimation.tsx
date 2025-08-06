@@ -5,9 +5,10 @@ interface TypingAnimationProps {
   text?: string;
   className?: string;
   onComplete?: () => void;
+  showProgress?: boolean;
 }
 
-export default function TypingAnimation({ text = 'Processing...', className = '', onComplete }: TypingAnimationProps) {
+export default function TypingAnimation({ text = 'Processing...', className = '', onComplete, showProgress = false }: TypingAnimationProps) {
   const el = useRef<HTMLSpanElement>(null);
   const typed = useRef<Typed | null>(null);
 
@@ -20,8 +21,8 @@ export default function TypingAnimation({ text = 'Processing...', className = ''
     }
 
     const options = {
-      strings: [text],
-      typeSpeed: 20, // Reduced from 40 to make it faster
+      strings: showProgress ? [text] : [text],
+      typeSpeed: showProgress ? 10 : 20, // Faster for progress updates
       startDelay: 300,
       showCursor: true,
       cursorChar: '|',
@@ -42,7 +43,7 @@ export default function TypingAnimation({ text = 'Processing...', className = ''
         typed.current.destroy();
       }
     };
-  }, [text, onComplete]); // Re-run effect when text or onComplete changes
+  }, [text, onComplete, showProgress]); // Re-run effect when text, onComplete, or showProgress changes
 
   return (
     <div className={`flex items-center space-x-3 ${className}`}>

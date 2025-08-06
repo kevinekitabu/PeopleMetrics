@@ -30,6 +30,7 @@ interface Report {
   regeneration_count: number;
   is_generating: boolean;
   stop_requested: boolean;
+  generation_progress?: number;
 }
 
 interface FileUploadProgress {
@@ -81,6 +82,7 @@ function Dashboard() {
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [generationProgress, setGenerationProgress] = useState<{ [key: string]: number }>({});
   const reportRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const processingReports = useRef<Set<string>>(new Set());
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
@@ -198,6 +200,9 @@ function Dashboard() {
     }
 
     try {
+      // Initialize progress tracking
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 0 }));
+      
       // Update generation status
       const { error: statusError } = await supabase
         .from('reports')
@@ -210,6 +215,8 @@ function Dashboard() {
       setSelectedReport(report);
       processingReports.current.add(report.id);
 
+      // Update progress to 10% after initialization
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 10 }));
       if (newContext !== undefined) {
         const { error: contextError } = await supabase
           .from('reports')
@@ -222,8 +229,10 @@ function Dashboard() {
         if (contextError) throw contextError;
       }
 
+      // Update progress to 25% after context update
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 25 }));
       // Process files with stop check
-      const processPromises = report.files.map(async (file) => {
+      const processPromises = report.files.map(async (file, index) => {
         // Check if stop was requested
         const { data: reportStatus } = await supabase
           .from('reports')
@@ -235,6 +244,9 @@ function Dashboard() {
           throw new Error('Generation stopped by user');
         }
 
+        // Update progress for file processing
+        const fileProgress = 25 + ((index + 1) / report.files.length) * 50;
+        setGenerationProgress(prev => ({ ...prev, [report.id]: fileProgress }));
         const { data: urlData, error: urlError } = await supabase.storage
           .from('reports')
           .createSignedUrl(file.path, 3600);
@@ -246,12 +258,18 @@ function Dashboard() {
       });
 
       const results = await Promise.all(processPromises);
+      
+      // Update progress to 85% after processing
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 85 }));
+      
       const combinedFeedback = results.join('\n\n---\n\n');
 
       const finalFeedback = report.context 
         ? `Context: ${report.context}\n\n${combinedFeedback}`
         : combinedFeedback;
 
+      // Update progress to 95% before database update
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 95 }));
       const { error: updateError } = await supabase
         .from('reports')
         .update({ 
@@ -263,6 +281,8 @@ function Dashboard() {
 
       if (updateError) throw updateError;
 
+      // Complete progress
+      setGenerationProgress(prev => ({ ...prev, [report.id]: 100 }));
       setReports(prev => prev.map(r => 
         r.id === report.id 
           ? { 
@@ -276,6 +296,7 @@ function Dashboard() {
           : r
       ));
 
+      // Auto-expand the completed report
       setExpandedReports(prev => new Set([...prev, report.id]));
       setHighlightedReport(report.id);
       
@@ -320,6 +341,12 @@ function Dashboard() {
       setIsProcessing(false);
       setSelectedReport(null);
       processingReports.current.delete(report.id);
+      // Clean up progress tracking
+      setGenerationProgress(prev => {
+        const newProgress = { ...prev };
+        delete newProgress[report.id];
+        return newProgress;
+      });
       setTimeout(() => setHighlightedReport(null), 2000);
     }
   };
@@ -733,7 +760,7 @@ function Dashboard() {
                           })}
                           className="text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
                         >
-                          {expandedReports.has(report.id) ? 'Show Less' : 'Show More'}
+                          {expandedReports.has(report.id) ? 'Collapse' : 'Expand'}
                         </button>
                         <button
                           onClick={() => handleDownload(report)}
@@ -748,19 +775,27 @@ function Dashboard() {
                             disabled={report.is_generating}
                           >
                             {report.is_generating ? (
-                              <div className="flex items-center space-x-2">
-                                <TypingAnimation text="Generating..." />
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleStopGeneration(report);
-                                  }}
-                                  className="ml-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                >
-                                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
+                              <div className="flex flex-col items-start space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <TypingAnimation text={`Generating... ${generationProgress[report.id] || 0}%`} />
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStopGeneration(report);
+                                    }}
+                                    className="ml-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                  >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                                  <div 
+                                    className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${generationProgress[report.id] || 0}%` }}
+                                  ></div>
+                                </div>
                               </div>
                             ) : (
                               'Regenerate'
@@ -772,16 +807,24 @@ function Dashboard() {
                   ) : (
                     <div className="flex items-center justify-between">
                       {report.is_generating ? (
-                        <div className="flex items-center space-x-2">
-                          <TypingAnimation text="Generating report..." />
-                          <button
-                            onClick={() => handleStopGeneration(report)}
-                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                          >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
+                        <div className="flex flex-col items-start space-y-2 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <TypingAnimation text={`Generating report... ${generationProgress[report.id] || 0}%`} />
+                            <button
+                              onClick={() => handleStopGeneration(report)}
+                              className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div 
+                              className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${generationProgress[report.id] || 0}%` }}
+                            ></div>
+                          </div>
                         </div>
                       ) : (
                         <>
