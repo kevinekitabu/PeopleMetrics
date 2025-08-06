@@ -251,8 +251,7 @@ export default function Landing() {
               {user ? (
                 <>
                   <Link
-                    to="#"
-                    onClick={handleDashboardClick}
+                    to="/dashboard"
                     className="px-4 py-1.5 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
                     style={{ animationDelay: '600ms' }}
                   >
@@ -298,11 +297,8 @@ export default function Landing() {
               {user ? (
                 <>
                   <Link
-                    to="#"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      handleDashboardClick();
-                    }}
+                    to="/dashboard"
+                    onClick={() => setIsMobileMenuOpen(false)}
                     className="block px-4 py-2 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   >
                     Dashboard
