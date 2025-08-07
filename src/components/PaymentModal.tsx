@@ -21,6 +21,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const [statusMessage, setStatusMessage] = useState('');
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(120);
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -30,8 +31,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setPhoneNumber('');
       setCheckoutRequestId(null);
       setTimeRemaining(120);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        setPollInterval(null);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, pollInterval]);
 
   // Countdown timer
   useEffect(() => {
@@ -43,6 +48,10 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           if (prev <= 1) {
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out. Please try again.');
+            if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+            }
             return 0;
           }
           return prev - 1;
@@ -51,14 +60,14 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
     }
     
     return () => interval && clearInterval(interval);
-  }, [paymentStatus, timeRemaining]);
+  }, [paymentStatus, timeRemaining, pollInterval]);
 
   if (!isOpen) return null;
 
   const handleMpesaPayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Simple validation
+    // Validation
     if (!phoneNumber.trim()) {
       toast.error('Please enter your phone number');
       return;
@@ -69,43 +78,50 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       return;
     }
 
+    if (!user) {
+      toast.error('Please sign in first');
+      return;
+    }
+
     try {
       setPaymentStatus('processing');
       setStatusMessage('Initiating M-Pesa payment...');
       setTimeRemaining(120);
 
-      // Format phone number
-      const formattedPhone = phoneNumber.startsWith('254') ? phoneNumber : `254${phoneNumber.replace(/^0+/, '')}`;
+      console.log('Starting payment with:', {
+        phoneNumber,
+        amount: selectedPlan.price,
+        plan: selectedPlan.name,
+        interval: selectedPlan.interval,
+        userEmail: user.email
+      });
 
-      // Validate phone format
-      if (!formattedPhone.match(/^254[0-9]{9}$/)) {
-        throw new Error('Invalid phone number format. Use 254XXXXXXXXX or 07XXXXXXXX');
-      }
-
-      console.log('Initiating payment:', { formattedPhone, amount: selectedPlan.price });
-
-      // Call simplified M-Pesa function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simple-mpesa`, {
+      // Call the simplified M-Pesa function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({
-          phoneNumber: formattedPhone,
+          phoneNumber: phoneNumber.trim(),
           amount: selectedPlan.price
         })
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Payment initiation failed');
+        const errorText = await response.text();
+        console.error('Payment API error:', errorText);
+        throw new Error(`Payment failed: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('Payment response:', data);
       
-      if (!data.CheckoutRequestID) {
-        throw new Error('Invalid response from payment service');
+      if (!data.success || !data.CheckoutRequestID) {
+        throw new Error(data.error || 'Invalid response from payment service');
       }
 
       setCheckoutRequestId(data.CheckoutRequestID);
@@ -114,13 +130,14 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
       // Start polling for status
       let attempts = 0;
-      const maxAttempts = 24; // 2 minutes
+      const maxAttempts = 24; // 2 minutes (5 seconds * 24)
 
       const pollStatus = async () => {
         try {
           attempts++;
+          console.log(`Status check attempt ${attempts}/${maxAttempts}`);
           
-          const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simple-mpesa-status`, {
+          const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple-status`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -131,11 +148,16 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
           if (statusResponse.ok) {
             const statusData = await statusResponse.json();
+            console.log('Status response:', statusData);
             
             if (statusData.status === 'COMPLETED') {
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
               toast.success('Payment completed successfully!');
+              if (pollInterval) {
+                clearInterval(pollInterval);
+                setPollInterval(null);
+              }
               setTimeout(() => onClose(), 2000);
               return;
             }
@@ -144,33 +166,52 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               setPaymentStatus('failed');
               setStatusMessage(statusData.message || 'Payment failed');
               toast.error(statusData.message || 'Payment failed');
+              if (pollInterval) {
+                clearInterval(pollInterval);
+                setPollInterval(null);
+              }
               return;
             }
+
+            // Update status message for pending
+            setStatusMessage(statusData.message || 'Waiting for payment confirmation...');
           }
 
           // Continue polling if still pending and within limits
-          if (attempts < maxAttempts && timeRemaining > 0) {
-            setTimeout(pollStatus, 5000);
+          if (attempts < maxAttempts && timeRemaining > 5) {
+            // Don't set new timeout, let the interval handle it
           } else {
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
             toast.error('Payment request timed out');
+            if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+            }
           }
 
         } catch (error) {
           console.error('Status check error:', error);
-          if (attempts < maxAttempts && timeRemaining > 0) {
-            setTimeout(pollStatus, 5000);
+          if (attempts < maxAttempts && timeRemaining > 5) {
+            // Continue polling on error
           } else {
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
             toast.error('Failed to verify payment');
+            if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+            }
           }
         }
       };
 
-      // Start polling after 5 seconds
-      setTimeout(pollStatus, 5000);
+      // Start polling every 5 seconds
+      const interval = setInterval(pollStatus, 5000);
+      setPollInterval(interval);
+
+      // Initial status check after 3 seconds
+      setTimeout(pollStatus, 3000);
 
     } catch (error) {
       console.error('Payment error:', error);
@@ -186,9 +227,35 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
+  const getStatusIcon = () => {
+    switch (paymentStatus) {
+      case 'processing':
+        return <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>;
+      case 'completed':
+        return <div className="text-green-600 text-6xl">✓</div>;
+      case 'failed':
+        return <div className="text-red-600 text-6xl">✗</div>;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (paymentStatus) {
+      case 'processing':
+        return 'text-blue-600 dark:text-blue-400';
+      case 'completed':
+        return 'text-green-600 dark:text-green-400';
+      case 'failed':
+        return 'text-red-600 dark:text-red-400';
+      default:
+        return 'text-gray-600 dark:text-gray-400';
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
             M-Pesa Payment
@@ -196,7 +263,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           {paymentStatus !== 'processing' && (
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -205,6 +272,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           )}
         </div>
 
+        {/* Plan Details */}
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
           <div className="flex justify-between mb-2">
             <span className="text-gray-600 dark:text-gray-300">Plan:</span>
@@ -213,7 +281,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-300">Amount:</span>
             <span className="font-semibold text-gray-900 dark:text-gray-100">
-              ${selectedPlan.price}
+              ${selectedPlan.price} USD
             </span>
           </div>
         </div>
@@ -222,18 +290,18 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           <form onSubmit={handleMpesaPayment} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone Number
+                Safaricom Phone Number
               </label>
               <input
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="254700000000 or 0700000000"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="0700000000 or 254700000000"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
                 required
               />
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Enter your Safaricom number
+                Enter your Safaricom M-Pesa number
               </p>
             </div>
             <button
@@ -245,9 +313,10 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           </form>
         ) : (
           <div className="text-center py-6">
+            {getStatusIcon()}
+            
             {paymentStatus === 'processing' && (
-              <div className="space-y-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+              <div className="space-y-4 mt-4">
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div 
                     className="bg-green-600 h-full rounded-full transition-all duration-1000"
@@ -260,19 +329,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               </div>
             )}
             
-            {paymentStatus === 'completed' && (
-              <div className="text-green-600 text-6xl mb-4">✓</div>
-            )}
-            
-            {paymentStatus === 'failed' && (
-              <div className="text-red-600 text-6xl mb-4">✗</div>
-            )}
-            
-            <p className={`text-lg mb-4 ${
-              paymentStatus === 'processing' ? 'text-blue-600 dark:text-blue-400' :
-              paymentStatus === 'completed' ? 'text-green-600 dark:text-green-400' :
-              'text-red-600 dark:text-red-400'
-            }`}>
+            <p className={`text-lg mt-4 ${getStatusColor()}`}>
               {statusMessage}
             </p>
             
@@ -283,8 +340,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                   setStatusMessage('');
                   setCheckoutRequestId(null);
                   setTimeRemaining(120);
+                  if (pollInterval) {
+                    clearInterval(pollInterval);
+                    setPollInterval(null);
+                  }
                 }}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
               >
                 Try Again
               </button>
