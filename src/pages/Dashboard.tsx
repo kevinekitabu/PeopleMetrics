@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { generateAndDownloadDocx } from '../utils/documentGenerator';
 import ThemeToggle from '../components/ThemeToggle';
 import SuperAdminView from '../components/SuperAdminView';
+import TestConnection from '../components/TestConnection';
 
 interface Report {
   id: string;
@@ -610,6 +611,8 @@ function Dashboard() {
           <SuperAdminView />
         ) : (
           <>
+        <TestConnection />
+        
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-lg p-8 mb-8 text-center cursor-pointer transition-all dropzone
