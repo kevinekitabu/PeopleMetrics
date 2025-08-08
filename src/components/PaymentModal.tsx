@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from './AuthProvider';
 import toast from 'react-hot-toast';
 
 interface PaymentModalProps {
@@ -15,7 +14,6 @@ interface PaymentModalProps {
 type PaymentStatus = 'idle' | 'processing' | 'completed' | 'failed';
 
 export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentModalProps) {
-  const { user } = useAuth();
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -67,60 +65,38 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const handleMpesaPayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Comprehensive validation with detailed logging
-    console.log('=== PAYMENT VALIDATION START ===');
+    console.log('=== PAYMENT FORM SUBMISSION ===');
     console.log('Phone Number:', phoneNumber);
-    console.log('Selected Plan:', selectedPlan);
-    console.log('User:', user);
+    console.log('Amount:', selectedPlan.price);
 
+    // Simple validation
     if (!phoneNumber?.trim()) {
-      console.error('Validation failed: Phone number is empty');
       toast.error('Please enter your phone number');
       return;
     }
 
     if (!selectedPlan?.price || selectedPlan.price <= 0) {
-      console.error('Validation failed: Invalid plan price:', selectedPlan?.price);
       toast.error('Invalid plan selected');
       return;
     }
-
-    if (!user?.id) {
-      console.error('Validation failed: No user ID');
-      toast.error('Please sign in first');
-      return;
-    }
-
-    console.log('=== VALIDATION PASSED ===');
 
     try {
       setPaymentStatus('processing');
       setStatusMessage('Initiating M-Pesa payment...');
       setTimeRemaining(120);
 
-      // Format phone number
-      let formattedPhone = phoneNumber.trim().replace(/\s+/g, '');
-      if (formattedPhone.startsWith('0')) {
-        formattedPhone = '254' + formattedPhone.substring(1);
-      }
-      if (!formattedPhone.startsWith('254')) {
-        formattedPhone = '254' + formattedPhone;
-      }
-
-      console.log('=== PAYMENT REQUEST START ===');
-      console.log('Formatted Phone:', formattedPhone);
-      console.log('Amount:', selectedPlan.price);
-      console.log('API URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple`);
-
+      console.log('=== CALLING M-PESA API ===');
+      
       const requestPayload = {
-        phoneNumber: formattedPhone,
+        phoneNumber: phoneNumber.trim(),
         amount: selectedPlan.price
       };
 
       console.log('Request payload:', JSON.stringify(requestPayload, null, 2));
+      console.log('API URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b`);
 
-      // Call the simplified M-Pesa function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple`, {
+      // Call the M-Pesa C2B function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,14 +140,14 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
       // Start polling for status
       let attempts = 0;
-      const maxAttempts = 24; // 2 minutes (5 seconds * 24)
+      const maxAttempts = 24; // 2 minutes
 
       const pollStatus = async () => {
         try {
           attempts++;
           console.log(`Status check attempt ${attempts}/${maxAttempts}`);
           
-          const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple-status`, {
+          const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b-status`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -194,7 +170,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                 clearInterval(pollInterval);
                 setPollInterval(null);
               }
-              setTimeout(() => onClose(), 2000);
+              setTimeout(() => onClose(), 3000);
               return;
             }
             
@@ -215,8 +191,8 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             console.warn('Status check failed:', statusResponse.status);
           }
 
-          // Continue polling if still pending and within limits
-          if (attempts >= maxAttempts || timeRemaining <= 5) {
+          // Stop polling if max attempts reached
+          if (attempts >= maxAttempts) {
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
             toast.error('Payment request timed out');
@@ -228,7 +204,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
         } catch (error) {
           console.error('Status check error:', error);
-          if (attempts >= maxAttempts || timeRemaining <= 5) {
+          if (attempts >= maxAttempts) {
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
             toast.error('Failed to verify payment');
@@ -352,9 +328,10 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             </div>
             <button
               type="submit"
-              className="w-full py-3 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+              disabled={!phoneNumber.trim() || !selectedPlan.price}
+              className="w-full py-3 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              Pay with M-Pesa
+              Pay ${selectedPlan.price} with M-Pesa
             </button>
           </form>
         ) : (
@@ -372,6 +349,11 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                 <div className="text-sm text-gray-600 dark:text-gray-300">
                   Time remaining: {formatTime(timeRemaining)}
                 </div>
+                {checkoutRequestId && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                    Request ID: {checkoutRequestId.slice(-8)}
+                  </div>
+                )}
               </div>
             )}
             
