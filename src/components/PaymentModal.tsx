@@ -67,34 +67,57 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const handleMpesaPayment = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
-    if (!phoneNumber.trim()) {
+    // Comprehensive validation with detailed logging
+    console.log('=== PAYMENT VALIDATION START ===');
+    console.log('Phone Number:', phoneNumber);
+    console.log('Selected Plan:', selectedPlan);
+    console.log('User:', user);
+
+    if (!phoneNumber?.trim()) {
+      console.error('Validation failed: Phone number is empty');
       toast.error('Please enter your phone number');
       return;
     }
 
     if (!selectedPlan?.price || selectedPlan.price <= 0) {
+      console.error('Validation failed: Invalid plan price:', selectedPlan?.price);
       toast.error('Invalid plan selected');
       return;
     }
 
-    if (!user) {
+    if (!user?.id) {
+      console.error('Validation failed: No user ID');
       toast.error('Please sign in first');
       return;
     }
+
+    console.log('=== VALIDATION PASSED ===');
 
     try {
       setPaymentStatus('processing');
       setStatusMessage('Initiating M-Pesa payment...');
       setTimeRemaining(120);
 
-      console.log('Starting payment with:', {
-        phoneNumber,
-        amount: selectedPlan.price,
-        plan: selectedPlan.name,
-        interval: selectedPlan.interval,
-        userEmail: user.email
-      });
+      // Format phone number
+      let formattedPhone = phoneNumber.trim().replace(/\s+/g, '');
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '254' + formattedPhone.substring(1);
+      }
+      if (!formattedPhone.startsWith('254')) {
+        formattedPhone = '254' + formattedPhone;
+      }
+
+      console.log('=== PAYMENT REQUEST START ===');
+      console.log('Formatted Phone:', formattedPhone);
+      console.log('Amount:', selectedPlan.price);
+      console.log('API URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple`);
+
+      const requestPayload = {
+        phoneNumber: formattedPhone,
+        amount: selectedPlan.price
+      };
+
+      console.log('Request payload:', JSON.stringify(requestPayload, null, 2));
 
       // Call the simplified M-Pesa function
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-simple`, {
@@ -103,30 +126,41 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          phoneNumber: phoneNumber.trim(),
-          amount: selectedPlan.price
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
       
+      const responseText = await response.text();
+      console.log('Response text:', responseText);
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Payment API error:', errorText);
-        throw new Error(`Payment failed: ${response.status} ${response.statusText}`);
+        console.error('Payment API error:', response.status, responseText);
+        throw new Error(`Payment failed: ${response.status} - ${responseText}`);
       }
 
-      const data = await response.json();
-      console.log('Payment response:', data);
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
+        throw new Error('Invalid response from payment service');
+      }
+
+      console.log('Parsed response data:', data);
       
       if (!data.success || !data.CheckoutRequestID) {
+        console.error('Invalid payment response:', data);
         throw new Error(data.error || 'Invalid response from payment service');
       }
 
       setCheckoutRequestId(data.CheckoutRequestID);
       setStatusMessage('Check your phone for M-Pesa prompt...');
       toast.success('M-Pesa request sent! Check your phone.');
+
+      console.log('=== STARTING STATUS POLLING ===');
+      console.log('CheckoutRequestID:', data.CheckoutRequestID);
 
       // Start polling for status
       let attempts = 0;
@@ -146,9 +180,11 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             body: JSON.stringify({ CheckoutRequestID: data.CheckoutRequestID })
           });
 
+          console.log('Status response status:', statusResponse.status);
+
           if (statusResponse.ok) {
             const statusData = await statusResponse.json();
-            console.log('Status response:', statusData);
+            console.log('Status response data:', statusData);
             
             if (statusData.status === 'COMPLETED') {
               setPaymentStatus('completed');
@@ -175,12 +211,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
             // Update status message for pending
             setStatusMessage(statusData.message || 'Waiting for payment confirmation...');
+          } else {
+            console.warn('Status check failed:', statusResponse.status);
           }
 
           // Continue polling if still pending and within limits
-          if (attempts < maxAttempts && timeRemaining > 5) {
-            // Don't set new timeout, let the interval handle it
-          } else {
+          if (attempts >= maxAttempts || timeRemaining <= 5) {
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
             toast.error('Payment request timed out');
@@ -192,9 +228,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
         } catch (error) {
           console.error('Status check error:', error);
-          if (attempts < maxAttempts && timeRemaining > 5) {
-            // Continue polling on error
-          } else {
+          if (attempts >= maxAttempts || timeRemaining <= 5) {
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
             toast.error('Failed to verify payment');
@@ -214,7 +248,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setTimeout(pollStatus, 3000);
 
     } catch (error) {
-      console.error('Payment error:', error);
+      console.error('=== PAYMENT ERROR ===', error);
       setPaymentStatus('failed');
       setStatusMessage(error instanceof Error ? error.message : 'Payment failed');
       toast.error(error instanceof Error ? error.message : 'Payment failed');
@@ -230,11 +264,23 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const getStatusIcon = () => {
     switch (paymentStatus) {
       case 'processing':
-        return <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>;
+        return (
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+          </div>
+        );
       case 'completed':
-        return <div className="text-green-600 text-6xl">✓</div>;
+        return (
+          <div className="flex items-center justify-center">
+            <div className="text-green-600 text-6xl">✓</div>
+          </div>
+        );
       case 'failed':
-        return <div className="text-red-600 text-6xl">✗</div>;
+        return (
+          <div className="flex items-center justify-center">
+            <div className="text-red-600 text-6xl">✗</div>
+          </div>
+        );
       default:
         return null;
     }
