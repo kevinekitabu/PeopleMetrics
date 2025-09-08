@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
-import { useAuth } from '../components/AuthProvider';
 import { useAuth } from '../components/Auth0AuthProvider';
 import PaymentModal from '../components/PaymentModal';
 import Auth0Modal from '../components/Auth0Modal';
