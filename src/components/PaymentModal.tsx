@@ -231,7 +231,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                     .from('subscriptions')
                     .select('*')
                     .eq('checkout_request_id', data.CheckoutRequestID)
-                    .single();
+                    .maybeSingle();
                   
                   if (existingSubscription) {
                     console.log('Subscription already exists:', existingSubscription.id);
