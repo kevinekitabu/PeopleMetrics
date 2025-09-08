@@ -104,9 +104,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             setSession(newSession);
             setUser(newSession.user);
             
-            // Don't auto-navigate if already on dashboard or if coming from login
-            if (location.pathname !== '/dashboard' && location.pathname !== '/login') {
-              navigate('/dashboard');
+            // Only navigate to dashboard if user was on login page
+            if (location.pathname === '/login') {
+              navigate('/dashboard', { replace: true });
             }
             
             const welcomeMessage = newSession.user?.email 

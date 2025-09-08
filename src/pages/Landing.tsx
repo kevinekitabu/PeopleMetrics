@@ -44,8 +44,14 @@ export default function Landing() {
 
   const handleAuthSuccess = () => {
     setIsAuthModalOpen(false);
-    toast.success('Welcome! Please select a plan to get started.');
-    // Don't auto-navigate, let them choose a plan first
+    toast.success('Welcome! Please select a plan below to get started.');
+    // Scroll to pricing section after successful auth
+    setTimeout(() => {
+      const pricingSection = document.getElementById('pricing');
+      if (pricingSection) {
+        pricingSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 1000);
   };
 
   const handleSignOut = async () => {
