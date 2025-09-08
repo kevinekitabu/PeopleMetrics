@@ -106,19 +106,3 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
 
   return <>{children}</>;
 }
-          </div>
-        </div>
-        <AuthModal
-          isOpen={showAuthModal}
-          onClose={() => setShowAuthModal(false)}
-          onSuccess={() => {
-            setShowAuthModal(false);
-            window.location.reload();
-          }}
-        />
-      </>
-    );
-  }
-
-  return <>{children}</>;
-}
