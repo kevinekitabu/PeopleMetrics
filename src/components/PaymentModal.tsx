@@ -175,7 +175,10 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             },
-            body: JSON.stringify({ CheckoutRequestID: data.CheckoutRequestID })
+            body: JSON.stringify({ 
+              CheckoutRequestID: data.CheckoutRequestID,
+              timestamp: new Date().toISOString()
+            })
           });
 
           const statusText = await statusResponse.text();
@@ -203,6 +206,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             
             if (statusData.status === 'COMPLETED') {
               console.log('=== PAYMENT COMPLETED - STOPPING POLL ===');
+              console.log('Payment completion source:', statusData.source);
               cleanup();
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
@@ -212,7 +216,20 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
                   console.log('Creating subscription for user:', user.id);
-                  const { error: subscriptionError } = await supabase
+                  
+                  // Check if subscription already exists
+                  const { data: existingSubscription } = await supabase
+                    .from('subscriptions')
+                    .select('*')
+                    .eq('checkout_request_id', data.CheckoutRequestID)
+                    .single();
+                  
+                  if (existingSubscription) {
+                    console.log('Subscription already exists:', existingSubscription.id);
+                    toast.success('Payment completed! Your subscription is active.');
+                  } else {
+                    console.log('Creating new subscription...');
+                    const { error: subscriptionError } = await supabase
                     .from('subscriptions')
                     .insert({
                       user_id: user.id,
@@ -223,13 +240,13 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                       checkout_request_id: data.CheckoutRequestID
                     });
                   
-                  if (subscriptionError) {
-                    console.error('Subscription creation error:', subscriptionError);
-                    // Don't fail the payment if subscription creation fails
-                    toast.success('Payment completed! Please contact support if you have issues accessing features.');
-                  } else {
-                    console.log('Subscription created successfully');
-                    toast.success('Payment completed successfully! Your subscription is now active.');
+                    if (subscriptionError) {
+                      console.error('Subscription creation error:', subscriptionError);
+                      toast.success('Payment completed! Please contact support if you have issues accessing features.');
+                    } else {
+                      console.log('Subscription created successfully');
+                      toast.success('Payment completed successfully! Your subscription is now active.');
+                    }
                   }
                 }
               } catch (subError) {
@@ -243,6 +260,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             
             if (statusData.status === 'FAILED') {
               console.log('=== PAYMENT FAILED - STOPPING POLL ===');
+              console.log('Payment failure source:', statusData.source);
               cleanup();
               setPaymentStatus('failed');
               setStatusMessage(statusData.message || 'Payment failed');

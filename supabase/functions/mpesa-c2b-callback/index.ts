@@ -46,10 +46,12 @@ Deno.serve(async (req) => {
       MerchantRequestID,
       CheckoutRequestID,
       ResultCode,
-      ResultDesc
+      ResultDesc,
+      CallbackMetadata
     });
 
-    // Store callback in mpesa_callbacks table
+    // STEP 1: Store callback in mpesa_callbacks table (CRITICAL for status checks)
+    console.log('Step 1: Storing callback in mpesa_callbacks table...');
     const { error: callbackError } = await supabase
       .from('mpesa_callbacks')
       .insert({
@@ -61,32 +63,60 @@ Deno.serve(async (req) => {
       });
 
     if (callbackError) {
-      console.error('Error storing callback:', callbackError);
+      console.error('CRITICAL ERROR: Failed to store callback:', callbackError);
+      // Continue processing even if callback storage fails
     } else {
-      console.log('Callback stored successfully');
+      console.log('✅ Callback stored successfully in mpesa_callbacks');
     }
 
-    // Update mpesa_payments table
+    // STEP 2: Update mpesa_payments table
+    console.log('Step 2: Updating mpesa_payments table...');
     const { error: paymentUpdateError } = await supabase
       .from('mpesa_payments')
       .update({
         status: ResultCode === 0 ? 'completed' : 'failed',
         result_code: ResultCode,
-        result_desc: ResultDesc
+        result_desc: ResultDesc,
+        updated_at: new Date().toISOString()
       })
       .eq('checkout_request_id', CheckoutRequestID);
 
     if (paymentUpdateError) {
       console.error('Error updating payment record:', paymentUpdateError);
     } else {
-      console.log('Payment record updated successfully');
+      console.log('✅ Payment record updated successfully');
     }
 
-    // If payment was successful, create/update subscription
+    // STEP 3: Handle successful payments
     if (ResultCode === 0) {
-      console.log('=== PAYMENT SUCCESSFUL ===');
+      console.log('=== PAYMENT SUCCESSFUL - PROCESSING ===');
       
-      // Get the payment record to find user info
+      // Extract payment details from CallbackMetadata if available
+      let amount = 0;
+      let phoneNumber = '';
+      let mpesaReceiptNumber = '';
+      
+      if (CallbackMetadata && CallbackMetadata.Item) {
+        console.log('Processing callback metadata:', CallbackMetadata.Item);
+        
+        CallbackMetadata.Item.forEach((item: any) => {
+          switch (item.Name) {
+            case 'Amount':
+              amount = item.Value;
+              break;
+            case 'MpesaReceiptNumber':
+              mpesaReceiptNumber = item.Value;
+              break;
+            case 'PhoneNumber':
+              phoneNumber = item.Value;
+              break;
+          }
+        });
+        
+        console.log('Extracted payment details:', { amount, phoneNumber, mpesaReceiptNumber });
+      }
+
+      // Get the payment record to find associated user (if any)
       const { data: paymentData, error: paymentFetchError } = await supabase
         .from('mpesa_payments')
         .select('*')
@@ -98,7 +128,7 @@ Deno.serve(async (req) => {
       } else if (paymentData) {
         console.log('Found payment data:', paymentData);
         
-        // Try to find existing subscription by checkout_request_id
+        // Try to find existing pending subscription by checkout_request_id
         const { data: existingSubscription, error: findError } = await supabase
           .from('subscriptions')
           .select('*')
@@ -108,7 +138,7 @@ Deno.serve(async (req) => {
         if (findError && findError.code !== 'PGRST116') {
           console.error('Error finding subscription:', findError);
         } else if (existingSubscription) {
-          console.log('Found existing subscription, updating status');
+          console.log('Found existing subscription, updating to active:', existingSubscription.id);
           
           const { error: updateError } = await supabase
             .from('subscriptions')
@@ -121,12 +151,31 @@ Deno.serve(async (req) => {
           if (updateError) {
             console.error('Error updating subscription:', updateError);
           } else {
-            console.log('Subscription activated successfully');
+            console.log('✅ Subscription activated successfully');
           }
         } else {
-          console.log('No existing subscription found - will need to be created manually or by frontend');
+          console.log('No existing subscription found - will be created by frontend');
         }
       }
+
+      // Store successful payment in payments table for record keeping
+      const { error: paymentsInsertError } = await supabase
+        .from('payments')
+        .insert({
+          user_id: paymentData?.user_id || null, // Will be null if no user associated
+          amount: amount || paymentData?.amount || 0,
+          currency: 'KES',
+          status: 'completed',
+          provider: 'mpesa',
+          provider_payment_id: mpesaReceiptNumber || CheckoutRequestID
+        });
+
+      if (paymentsInsertError) {
+        console.error('Error storing payment record:', paymentsInsertError);
+      } else {
+        console.log('✅ Payment record stored in payments table');
+      }
+
     } else {
       console.log('=== PAYMENT FAILED ===');
       console.log('Failure reason:', ResultDesc);
@@ -143,15 +192,20 @@ Deno.serve(async (req) => {
 
       if (subscriptionUpdateError) {
         console.error('Error updating failed subscription:', subscriptionUpdateError);
+      } else {
+        console.log('✅ Failed subscription status updated');
       }
     }
+
+    console.log('=== CALLBACK PROCESSING COMPLETE ===');
 
     // Always return success to M-Pesa to acknowledge callback
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: `Callback processed - ${ResultCode === 0 ? 'success' : 'failed'}`,
-        checkoutRequestId: CheckoutRequestID
+        message: `Callback processed successfully - ${ResultCode === 0 ? 'payment successful' : 'payment failed'}`,
+        checkoutRequestId: CheckoutRequestID,
+        resultCode: ResultCode
       }),
       { 
         headers: { 
@@ -162,7 +216,7 @@ Deno.serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('=== CALLBACK ERROR ===', error);
+    console.error('=== CALLBACK PROCESSING ERROR ===', error);
     
     // Always return 200 to acknowledge callback to M-Pesa
     return new Response(
