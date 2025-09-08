@@ -168,7 +168,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
       // Start polling for status - check every 2 seconds
       let attempts = 0;
-      const maxAttempts = 60; // 2 minutes (2 seconds * 60 = 120 seconds)
+      const maxAttempts = 24; // 2 minutes (5 seconds * 24 = 120 seconds)
       let isPolling = true;
 
       const pollStatus = async () => {
@@ -176,7 +176,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         
         try {
           attempts++;
-          console.log(`Status check attempt ${attempts}/${maxAttempts}`);
+          console.log(`Status check attempt ${attempts}/${maxAttempts} (every 5 seconds)`);
           
           const statusResponse = await fetch(`${supabaseUrl}/functions/v1/mpesa-c2b-status`, {
             method: 'POST',
@@ -312,12 +312,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         }
       };
 
-      // Start polling every 2 seconds
-      const intervalId = window.setInterval(pollStatus, 2000);
+      // Start polling every 5 seconds to avoid rate limits
+      const intervalId = window.setInterval(pollStatus, 5000);
       setPollIntervalId(intervalId);
 
-      // Initial status check immediately
-      pollStatus();
+      // Initial status check after 3 seconds (give M-Pesa time to process)
+      setTimeout(pollStatus, 3000);
 
     } catch (error) {
       console.error('=== PAYMENT ERROR ===', error);
