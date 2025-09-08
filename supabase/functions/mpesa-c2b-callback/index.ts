@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
       ResultDesc
     });
 
-    // Store callback in mpesa_callbacks table (this should exist)
+    // Store callback in mpesa_callbacks table
     const { error: callbackError } = await supabase
       .from('mpesa_callbacks')
       .insert({
@@ -66,39 +66,84 @@ Deno.serve(async (req) => {
       console.log('Callback stored successfully');
     }
 
-    // If payment was successful, try to create/update subscription
+    // Update mpesa_payments table
+    const { error: paymentUpdateError } = await supabase
+      .from('mpesa_payments')
+      .update({
+        status: ResultCode === 0 ? 'completed' : 'failed',
+        result_code: ResultCode,
+        result_desc: ResultDesc
+      })
+      .eq('checkout_request_id', CheckoutRequestID);
+
+    if (paymentUpdateError) {
+      console.error('Error updating payment record:', paymentUpdateError);
+    } else {
+      console.log('Payment record updated successfully');
+    }
+
+    // If payment was successful, create/update subscription
     if (ResultCode === 0) {
       console.log('=== PAYMENT SUCCESSFUL ===');
       
-      // Try to find and update subscription by checkout_request_id
-      const { data: existingSubscription, error: findError } = await supabase
-        .from('subscriptions')
+      // Get the payment record to find user info
+      const { data: paymentData, error: paymentFetchError } = await supabase
+        .from('mpesa_payments')
         .select('*')
         .eq('checkout_request_id', CheckoutRequestID)
         .single();
 
-      if (findError) {
-        console.log('No existing subscription found, will need manual creation');
-      } else if (existingSubscription) {
-        console.log('Found existing subscription, updating status');
+      if (paymentFetchError) {
+        console.error('Error fetching payment data:', paymentFetchError);
+      } else if (paymentData) {
+        console.log('Found payment data:', paymentData);
         
-        const { error: updateError } = await supabase
+        // Try to find existing subscription by checkout_request_id
+        const { data: existingSubscription, error: findError } = await supabase
           .from('subscriptions')
-          .update({
-            status: 'active',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSubscription.id);
+          .select('*')
+          .eq('checkout_request_id', CheckoutRequestID)
+          .single();
 
-        if (updateError) {
-          console.error('Error updating subscription:', updateError);
+        if (findError && findError.code !== 'PGRST116') {
+          console.error('Error finding subscription:', findError);
+        } else if (existingSubscription) {
+          console.log('Found existing subscription, updating status');
+          
+          const { error: updateError } = await supabase
+            .from('subscriptions')
+            .update({
+              status: 'active',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingSubscription.id);
+
+          if (updateError) {
+            console.error('Error updating subscription:', updateError);
+          } else {
+            console.log('Subscription activated successfully');
+          }
         } else {
-          console.log('Subscription activated successfully');
+          console.log('No existing subscription found - will need to be created manually or by frontend');
         }
       }
     } else {
       console.log('=== PAYMENT FAILED ===');
       console.log('Failure reason:', ResultDesc);
+      
+      // Update any pending subscriptions to failed
+      const { error: subscriptionUpdateError } = await supabase
+        .from('subscriptions')
+        .update({
+          status: 'failed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('checkout_request_id', CheckoutRequestID)
+        .eq('status', 'pending');
+
+      if (subscriptionUpdateError) {
+        console.error('Error updating failed subscription:', subscriptionUpdateError);
+      }
     }
 
     // Always return success to M-Pesa to acknowledge callback

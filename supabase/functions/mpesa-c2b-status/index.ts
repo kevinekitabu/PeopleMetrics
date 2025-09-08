@@ -36,7 +36,40 @@ Deno.serve(async (req) => {
 
     console.log('Checking payment status for:', CheckoutRequestID);
 
-    // Check mpesa_callbacks table first
+    // First check mpesa_payments table (most reliable)
+    const { data: paymentData, error: paymentError } = await supabase
+      .from('mpesa_payments')
+      .select('*')
+      .eq('checkout_request_id', CheckoutRequestID)
+      .single();
+
+    if (!paymentError && paymentData) {
+      console.log('Found payment data:', paymentData);
+      
+      if (paymentData.status === 'completed') {
+        return new Response(
+          JSON.stringify({ 
+            status: 'COMPLETED', 
+            message: 'Payment completed successfully',
+            resultCode: paymentData.result_code,
+            resultDesc: paymentData.result_desc
+          }),
+          { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        );
+      } else if (paymentData.status === 'failed') {
+        return new Response(
+          JSON.stringify({ 
+            status: 'FAILED', 
+            message: paymentData.result_desc || 'Payment failed',
+            resultCode: paymentData.result_code,
+            resultDesc: paymentData.result_desc
+          }),
+          { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        );
+      }
+    }
+
+    // Fallback: Check mpesa_callbacks table
     const { data: callbackData, error: callbackError } = await supabase
       .from('mpesa_callbacks')
       .select('*')
@@ -45,11 +78,7 @@ Deno.serve(async (req) => {
       .limit(1)
       .single();
 
-    if (callbackError && callbackError.code !== 'PGRST116') {
-      console.error('Error checking callback:', callbackError);
-    }
-
-    if (callbackData) {
+    if (!callbackError && callbackData) {
       console.log('Found callback data:', callbackData);
       
       if (callbackData.result_code === 0) {
@@ -75,7 +104,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Check subscription status as backup
+    // Final fallback: Check subscription status
     const { data: subscriptionData, error: subscriptionError } = await supabase
       .from('subscriptions')
       .select('status')
@@ -92,8 +121,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // No callback found yet, payment still pending
-    console.log('No callback found yet, status: PENDING');
+    // No status found yet, payment still pending
+    console.log('No status found yet, status: PENDING');
     return new Response(
       JSON.stringify({ 
         status: 'PENDING', 

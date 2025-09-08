@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
-// M-Pesa Sandbox Credentials (exactly as provided)
+// M-Pesa Sandbox Credentials
 const MPESA_CONSUMER_KEY = 'IIOfklBxQmfrwVOynZJbQw5wCn3GJpCE';
 const MPESA_CONSUMER_SECRET = '3YSlKPHxZxE0iXug';
 const MPESA_SHORTCODE = 174379;
@@ -28,9 +28,7 @@ async function getAccessToken(): Promise<string> {
   try {
     console.log('Getting M-Pesa access token...');
     
-    // Create Base64 encoded auth string (Consumer Key : Consumer Secret)
     const auth = btoa(`${MPESA_CONSUMER_KEY}:${MPESA_CONSUMER_SECRET}`);
-    console.log('Auth string created');
     
     const response = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       method: 'GET',
@@ -40,12 +38,10 @@ async function getAccessToken(): Promise<string> {
       }
     });
 
-    console.log('Auth response status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Auth failed:', response.status, errorText);
-      throw new Error(`Auth failed: ${response.status} - ${errorText}`);
+      throw new Error(`Auth failed: ${response.status}`);
     }
 
     const data = await response.json();
@@ -103,7 +99,7 @@ Deno.serve(async (req) => {
       throw new Error('Valid amount is required');
     }
 
-    // Format phone number (ensure it starts with 254)
+    // Format phone number
     let formattedPhone = phoneNumber.toString().replace(/\s+/g, '');
     if (formattedPhone.startsWith('0')) {
       formattedPhone = '254' + formattedPhone.substring(1);
@@ -124,11 +120,11 @@ Deno.serve(async (req) => {
     console.log('Getting access token...');
     const accessToken = await getAccessToken();
 
-    // Generate timestamp (exactly as in your example)
+    // Generate timestamp
     const timestamp = generateTimestamp();
     console.log('Generated timestamp:', timestamp);
 
-    // Generate password (exactly as in your example)
+    // Generate password
     const password = generatePassword(MPESA_SHORTCODE, MPESA_PASSKEY, timestamp);
     console.log('Generated password');
 
@@ -136,7 +132,7 @@ Deno.serve(async (req) => {
     const callbackURL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/mpesa-c2b-callback`;
     console.log('Callback URL:', callbackURL);
 
-    // STK Push payload (exactly as your example)
+    // STK Push payload
     const stkPayload = {
       BusinessShortCode: MPESA_SHORTCODE,
       Password: password,
@@ -172,7 +168,7 @@ Deno.serve(async (req) => {
 
     console.log('Payment record created:', paymentRecord.id);
 
-    // Make STK Push request (exactly as your example)
+    // Make STK Push request
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
