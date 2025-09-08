@@ -48,8 +48,8 @@
    - Create a `.env` file in the root directory.
    - Add the following variables:
      ```
-     REACT_APP_SUPABASE_URL=<your-supabase-url>
-     REACT_APP_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+     VITE_SUPABASE_URL=<your-supabase-url>
+     VITE_SUPABASE_ANON_KEY=<your-supabase-anon-key>
      ```
 
 4. Start the development server:
