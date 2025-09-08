@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -20,8 +20,9 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const [statusMessage, setStatusMessage] = useState('');
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(120);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
-  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
+  const [pollIntervalId, setPollIntervalId] = useState<number | null>(null);
+  const [timerIntervalId, setTimerIntervalId] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -31,57 +32,52 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setPhoneNumber('');
       setCheckoutRequestId(null);
       setTimeRemaining(120);
-      if (pollInterval) {
-        clearInterval(pollInterval);
-        setPollInterval(null);
+      setIsPolling(false);
+      if (pollIntervalId) {
+        clearInterval(pollIntervalId);
+        setPollIntervalId(null);
       }
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        setTimerInterval(null);
+      if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+        setTimerIntervalId(null);
       }
     }
-  }, [isOpen, pollInterval, timerInterval]);
+  }, [isOpen, pollIntervalId, timerIntervalId]);
 
-  // Countdown timer
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    if (pollIntervalId) clearInterval(pollIntervalId);
+    if (timerIntervalId) clearInterval(timerIntervalId);
+    setPollIntervalId(null);
+    setTimerIntervalId(null);
+    setIsPolling(false);
+  }, [pollIntervalId, timerIntervalId]);
+
+  // Timer management
   useEffect(() => {
-    if (timerInterval) {
-      clearInterval(timerInterval);
+    // Clear existing timer
+    if (timerIntervalId) {
+      clearInterval(timerIntervalId);
+      setTimerIntervalId(null);
     }
     
     if (paymentStatus === 'processing' && timeRemaining > 0) {
-      const interval = setInterval(() => {
+      const intervalId = window.setInterval(() => {
         setTimeRemaining(prev => {
           if (prev <= 1) {
+            cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out. Please try again.');
-            if (pollInterval) {
-              clearInterval(pollInterval);
-              setPollInterval(null);
-            }
-            if (timerInterval) {
-              clearInterval(timerInterval);
-              setTimerInterval(null);
-            }
+            toast.error('Payment request timed out');
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
-      setTimerInterval(interval);
-    } else if (paymentStatus !== 'processing') {
-      // Stop timer when payment is no longer processing
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        setTimerInterval(null);
-      }
+      setTimerIntervalId(intervalId);
     }
     
-    return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-      }
-    };
-  }, [paymentStatus, timeRemaining, pollInterval, timerInterval]);
+  }, [paymentStatus, timeRemaining, cleanup]);
 
   if (!isOpen) return null;
 
@@ -157,6 +153,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setCheckoutRequestId(data.CheckoutRequestID);
       setStatusMessage('Check your phone for M-Pesa prompt...');
       toast.success('M-Pesa request sent! Check your phone.');
+      setIsPolling(true);
 
       console.log('=== STARTING STATUS POLLING ===');
       console.log('CheckoutRequestID:', data.CheckoutRequestID);
@@ -166,6 +163,8 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       const maxAttempts = 40; // 2 minutes (3 seconds * 40 = 120 seconds)
 
       const pollStatus = async () => {
+        if (!isPolling) return; // Stop if polling was cancelled
+        
         try {
           attempts++;
           console.log(`Status check attempt ${attempts}/${maxAttempts}`);
@@ -195,16 +194,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             console.log('Status response data:', statusData);
             
             if (statusData.status === 'COMPLETED') {
-              // Stop all timers immediately
-              if (pollInterval) {
-                clearInterval(pollInterval);
-                setPollInterval(null);
-              }
-              if (timerInterval) {
-                clearInterval(timerInterval);
-                setTimerInterval(null);
-              }
-              
+              cleanup();
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
               
@@ -235,16 +225,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             }
             
             if (statusData.status === 'FAILED') {
-              // Stop all timers
-              if (pollInterval) {
-                clearInterval(pollInterval);
-                setPollInterval(null);
-              }
-              if (timerInterval) {
-                clearInterval(timerInterval);
-                setTimerInterval(null);
-              }
-              
+              cleanup();
               setPaymentStatus('failed');
               setStatusMessage(statusData.message || 'Payment failed');
               toast.error(statusData.message || 'Payment failed');
@@ -261,14 +242,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
           // Stop polling if max attempts reached
           if (attempts >= maxAttempts) {
-            if (pollInterval) {
-              clearInterval(pollInterval);
-              setPollInterval(null);
-            }
-            if (timerInterval) {
-              clearInterval(timerInterval);
-              setTimerInterval(null);
-            }
+            cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
             toast.error('Payment request timed out');
@@ -277,14 +251,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         } catch (error) {
           console.error('Status check error:', error);
           if (attempts >= maxAttempts) {
-            if (pollInterval) {
-              clearInterval(pollInterval);
-              setPollInterval(null);
-            }
-            if (timerInterval) {
-              clearInterval(timerInterval);
-              setTimerInterval(null);
-            }
+            cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
             toast.error('Failed to verify payment');
@@ -293,14 +260,15 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       };
 
       // Start polling every 3 seconds
-      const interval = setInterval(pollStatus, 3000);
-      setPollInterval(interval);
+      const intervalId = window.setInterval(pollStatus, 3000);
+      setPollIntervalId(intervalId);
 
       // Initial status check after 2 seconds
       setTimeout(pollStatus, 2000);
 
     } catch (error) {
       console.error('=== PAYMENT ERROR ===', error);
+      cleanup();
       setPaymentStatus('failed');
       setStatusMessage(error instanceof Error ? error.message : 'Payment failed');
       toast.error(error instanceof Error ? error.message : 'Payment failed');
@@ -440,18 +408,11 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             {paymentStatus === 'failed' && (
               <button
                 onClick={() => {
+                  cleanup();
                   setPaymentStatus('idle');
                   setStatusMessage('');
                   setCheckoutRequestId(null);
                   setTimeRemaining(120);
-                  if (pollInterval) {
-                    clearInterval(pollInterval);
-                    setPollInterval(null);
-                  }
-                  if (timerInterval) {
-                    clearInterval(timerInterval);
-                    setTimerInterval(null);
-                  }
                 }}
                 className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
               >
