@@ -231,6 +231,7 @@ export default function SuperAdminView() {
 
   const loadMpesaPayments = async () => {
     try {
+      console.log('Loading M-Pesa payments...');
       const { data, error } = await supabase
         .from('mpesa_payments')
         .select('*')
@@ -238,6 +239,7 @@ export default function SuperAdminView() {
         .limit(100);
 
       if (error) throw error;
+      console.log('M-Pesa payments loaded:', data?.length || 0);
       setMpesaPayments(data || []);
     } catch (error) {
       console.error('Error loading M-Pesa payments:', error);

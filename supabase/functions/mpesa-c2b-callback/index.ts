@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     // Update payment status
     const status = ResultCode === 0 ? 'completed' : 'failed';
     
-    const { error: paymentError } = await supabase
+    const { data: updatedPayment, error: paymentError } = await supabase
       .from('mpesa_payments')
       .update({
         status: status,
@@ -78,6 +78,22 @@ Deno.serve(async (req) => {
 
     if (paymentError) {
       console.error('Error updating payment:', paymentError);
+      // Try to find and update by merchant_request_id as fallback
+      const { error: fallbackError } = await supabase
+        .from('mpesa_payments')
+        .update({
+          status: status,
+          result_code: ResultCode,
+          result_desc: ResultDesc,
+          updated_at: new Date().toISOString()
+        })
+        .eq('merchant_request_id', MerchantRequestID);
+      
+      if (fallbackError) {
+        console.error('Fallback update also failed:', fallbackError);
+      } else {
+        console.log('✅ Payment status updated via fallback method');
+      }
     } else {
       console.log('✅ Payment status updated to:', status);
     }

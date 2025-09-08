@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
     const { data: paymentRecord, error: insertError } = await supabase
       .from('mpesa_payments')
       .insert({
-        checkout_request_id: 'pending', // Will be updated after STK response
+        checkout_request_id: 'temp_' + Date.now(), // Temporary ID until we get the real one
         phone_number: formattedPhone,
         amount: amount,
         status: 'pending'
@@ -163,10 +163,12 @@ Deno.serve(async (req) => {
 
     if (insertError) {
       console.error('Error creating payment record:', insertError);
-      throw new Error('Failed to create payment record');
+      console.warn('Could not create initial payment record, continuing...');
     }
 
-    console.log('Payment record created:', paymentRecord.id);
+    if (paymentRecord) {
+      console.log('Payment record created:', paymentRecord.id);
+    }
 
     // Make STK Push request
     const stkResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
@@ -213,18 +215,22 @@ Deno.serve(async (req) => {
       throw new Error('Invalid response from M-Pesa - no CheckoutRequestID');
     }
 
-    // Update payment record with CheckoutRequestID
-    const { error: updateError } = await supabase
+    // Create or update payment record with CheckoutRequestID
+    const { error: upsertError } = await supabase
       .from('mpesa_payments')
-      .update({
+      .upsert({
         checkout_request_id: stkData.CheckoutRequestID,
-        merchant_request_id: stkData.MerchantRequestID
-      })
-      .eq('id', paymentRecord.id);
+        merchant_request_id: stkData.MerchantRequestID,
+        phone_number: formattedPhone,
+        amount: amount,
+        status: 'pending'
+      }, {
+        onConflict: 'checkout_request_id'
+      });
 
-    if (updateError) {
-      console.error('Error updating payment record:', updateError);
-      // Don't throw here, payment was initiated successfully
+    if (upsertError) {
+      console.error('Error upserting payment record:', upsertError);
+      console.log('Continuing anyway, callback will handle payment tracking');
     }
 
     console.log('=== M-PESA C2B REQUEST SUCCESS ===');
