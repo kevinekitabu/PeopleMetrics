@@ -112,14 +112,26 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       };
 
       console.log('Request payload:', JSON.stringify(requestPayload, null, 2));
-      console.log('API URL:', `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b`);
+      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl) {
+        throw new Error('VITE_SUPABASE_URL environment variable is not set. Please check your .env file.');
+      }
+      
+      if (!supabaseKey) {
+        throw new Error('VITE_SUPABASE_ANON_KEY environment variable is not set. Please check your .env file.');
+      }
+      
+      console.log('API URL:', `${supabaseUrl}/functions/v1/mpesa-c2b`);
 
       // Call the M-Pesa C2B function
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/mpesa-c2b`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${supabaseKey}`,
         },
         body: JSON.stringify(requestPayload)
       });
@@ -169,11 +181,11 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           attempts++;
           console.log(`Status check attempt ${attempts}/${maxAttempts}`);
           
-          const statusResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mpesa-c2b-status`, {
+          const statusResponse = await fetch(`${supabaseUrl}/functions/v1/mpesa-c2b-status`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'Authorization': `Bearer ${supabaseKey}`,
             },
             body: JSON.stringify({ 
               CheckoutRequestID: data.CheckoutRequestID,
