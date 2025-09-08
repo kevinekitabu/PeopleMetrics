@@ -131,13 +131,13 @@ export default function SuperAdminView() {
         .eq('status', 'completed');
 
       // Calculate total revenue (sum of all successful payments)
-      const { data: successfulPayments } = await supabase
+      const { data: activeSubscriptionsData } = await supabase
         .from('subscriptions')
         .select('plan, interval')
         .eq('status', 'active');
 
       let totalRevenue = 0;
-      successfulPayments?.forEach(sub => {
+      activeSubscriptionsData?.forEach(sub => {
         // Basic pricing logic - you can adjust based on your actual pricing
         const planPrices: { [key: string]: { month: number; year: number } } = {
           'Basic': { month: 20, year: 200 },
