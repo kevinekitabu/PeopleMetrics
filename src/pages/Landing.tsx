@@ -2,25 +2,23 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
 import { useAuth } from '../components/AuthProvider';
+import { useAuth } from '../components/Auth0AuthProvider';
 import PaymentModal from '../components/PaymentModal';
-import AuthModal from '../components/AuthModal';
+import Auth0Modal from '../components/Auth0Modal';
 import ThemeToggle from '../components/ThemeToggle';
-import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 
 export default function Landing() {
   // ...existing code...
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    toast.success('Signed out successfully!');
-    window.location.reload(); // reload to update UI
+    await signOut();
   };
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isYearly, setIsYearly] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAuth0ModalOpen, setIsAuth0ModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{
     name: string;
@@ -30,7 +28,7 @@ export default function Landing() {
 
   const handleGetStarted = () => {
     if (!user) {
-      setIsAuthModalOpen(true);
+      setIsAuth0ModalOpen(true);
       return;
     }
     setSelectedPlan({
@@ -43,7 +41,7 @@ export default function Landing() {
 
   const handleSelectPlan = async (plan: string, price: number) => {
     if (!user) {
-      setIsAuthModalOpen(true);
+      setIsAuth0ModalOpen(true);
       return;
     }
     setSelectedPlan({
@@ -55,7 +53,7 @@ export default function Landing() {
   };
 
   const handleAuthSuccess = () => {
-    setIsAuthModalOpen(false);
+    setIsAuth0ModalOpen(false);
     toast.success('Successfully signed in!');
     navigate('/dashboard');
   };
@@ -267,7 +265,7 @@ export default function Landing() {
                 </>
               ) : (
                 <button
-                  onClick={() => setIsAuthModalOpen(true)}
+                  onClick={() => setIsAuth0ModalOpen(true)}
                   className="px-4 py-1.5 text-sm font-semibold text-white bg-blue-900 dark:bg-yellow-400 dark:text-blue-900 rounded-lg hover:bg-blue-800 dark:hover:bg-yellow-300 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   style={{ animationDelay: '600ms' }}
                 >
@@ -317,7 +315,7 @@ export default function Landing() {
                 <button
                   onClick={() => {
                     setIsMobileMenuOpen(false);
-                    setIsAuthModalOpen(true);
+                    setIsAuth0ModalOpen(true);
                   }}
                   className="block w-full text-left px-4 py-2 text-sm font-semibold text-white bg-blue-900 dark:bg-yellow-400 dark:text-blue-900 rounded-lg hover:bg-blue-800 dark:hover:bg-yellow-300 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 >
@@ -348,7 +346,7 @@ export default function Landing() {
               </Link>
             ) : (
               <button
-                onClick={() => setIsAuthModalOpen(true)}
+                onClick={() => setIsAuth0ModalOpen(true)}
                 className="inline-block px-6 py-3 text-base md:text-lg font-medium text-white bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 rounded-lg transition-all hover-lift animate-pulse-glow"
               >
                 Get Started
@@ -617,9 +615,9 @@ export default function Landing() {
       </section>
 
       {/* Auth Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+      <Auth0Modal
+        isOpen={isAuth0ModalOpen}
+        onClose={() => setIsAuth0ModalOpen(false)}
         onSuccess={handleAuthSuccess}
       />
 

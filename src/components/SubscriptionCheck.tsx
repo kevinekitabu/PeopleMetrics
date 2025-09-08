@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, Navigate } from 'react-router-dom';
-import { useAuth } from './AuthProvider';
+import { useAuth } from './Auth0AuthProvider';
 import { supabase } from '../lib/supabase';
 import { useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
@@ -23,7 +23,8 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
     'admin@gmail.com',
     'peoplemetricssolutions@gmail.com',
     'michelle.gacigi@gmail.com',
-    'superadmin@mail.com'
+    'superadmin@mail.com',
+    // Add Auth0 user emails here as needed
   ];
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export default function SubscriptionCheck({ children }: SubscriptionCheckProps) 
 
         // Check if user is admin by email first (primary check)
         let isAdminUser = false;
-        if (user.email && adminEmails.includes(user.email)) {
+        if (user?.email && adminEmails.includes(user.email)) {
           isAdminUser = true;
           console.log('Admin user detected by email:', user.email);
         }
