@@ -18,12 +18,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleAuthSuccess = () => {
-    onSuccess();
-    toast('Please select a plan to access the dashboard.');
-    navigate('/'); // Redirect to landing page
-  };
-
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
@@ -66,12 +60,12 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
         if (finalSignInError) throw finalSignInError;
         
         if (finalSignInData.session) {
-          handleAuthSuccess();
+          onSuccess();
         }
       } else if (signInError) {
         throw signInError;
       } else if (signInData.session) {
-        handleAuthSuccess();
+        onSuccess();
       }
     } catch (error) {
       console.error('Google sign in error:', error);
@@ -115,7 +109,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
 
         if (signInError) throw signInError;
         if (signInData.session) {
-          handleAuthSuccess();
+          onSuccess();
         }
       }
     } catch (error: any) {
@@ -126,15 +120,15 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
   };
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-blue-900/90 via-blue-800/90 to-blue-900/90 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-blue-950 rounded-2xl max-w-md w-full p-8 shadow-2xl border border-blue-200 dark:border-blue-800">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-blue-900 dark:text-yellow-300">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
             {mode === 'login' ? 'Sign In' : 'Create Account'}
           </h2>
           <button
             onClick={onClose}
-            className="text-blue-400 hover:text-yellow-400 transition-colors"
+            className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
             title="Close"
             aria-label="Close"
           >
@@ -147,24 +141,24 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
         <button
           onClick={handleGoogleSignIn}
           disabled={isLoading}
-          className="w-full flex justify-center items-center px-4 py-2 border border-blue-200 dark:border-blue-700 shadow-sm text-sm font-medium rounded-lg text-blue-900 dark:text-yellow-200 bg-white dark:bg-blue-900 hover:bg-yellow-50 dark:hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 mb-4 transition-all"
+          className="w-full flex justify-center items-center px-4 py-3 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-lg text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 mb-6 transition-all"
         >
-          <i className="fab fa-google text-xl mr-2 text-yellow-400"></i>
+          <i className="fab fa-google text-xl mr-3 text-red-500"></i>
           Continue with Google
         </button>
 
         <div className="relative mb-4">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-blue-200 dark:border-blue-700"></div>
+            <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white dark:bg-blue-950 text-blue-400 dark:text-yellow-200">Or continue with email</span>
+            <span className="px-2 bg-white dark:bg-blue-950 text-gray-500 dark:text-gray-400">Or continue with email</span>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-blue-900 dark:text-yellow-200">
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Email address
             </label>
             <input
@@ -172,13 +166,13 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               id="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 block w-full rounded-lg border-blue-200 dark:border-blue-700 bg-white dark:bg-blue-900 text-blue-900 dark:text-yellow-200 shadow-sm focus:border-yellow-400 focus:ring-yellow-400 sm:text-sm transition-all"
+              className="mt-1 block w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm transition-all"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-blue-900 dark:text-yellow-200">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Password
             </label>
             <input
@@ -186,7 +180,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-lg border-blue-200 dark:border-blue-700 bg-white dark:bg-blue-900 text-blue-900 dark:text-yellow-200 shadow-sm focus:border-yellow-400 focus:ring-yellow-400 sm:text-sm transition-all"
+              className="mt-1 block w-full rounded-lg border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm transition-all"
               required
               minLength={6}
             />
@@ -195,9 +189,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white ${
-              isLoading ? 'bg-blue-400 dark:bg-blue-700' : 'bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400'
-            } focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 transition-all`}
+            className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white ${
+              isLoading ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-700'
+            } focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all`}
           >
             {isLoading ? 'Processing...' : mode === 'login' ? 'Sign In' : 'Sign Up'}
           </button>
@@ -205,7 +199,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           <button
             type="button"
             onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-            className="w-full text-sm text-blue-700 dark:text-yellow-300 hover:text-yellow-500 dark:hover:text-yellow-400 transition-colors"
+            className="w-full text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors"
           >
             {mode === 'login'
               ? "Don't have an account? Sign up"

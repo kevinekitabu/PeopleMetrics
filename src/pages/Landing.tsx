@@ -1,23 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
-import { useAuth } from '../components/Auth0AuthProvider';
+import { useAuth } from '../components/AuthProvider';
 import PaymentModal from '../components/PaymentModal';
-import Auth0Modal from '../components/Auth0Modal';
+import AuthModal from '../components/AuthModal';
 import ThemeToggle from '../components/ThemeToggle';
 import toast from 'react-hot-toast';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 
 export default function Landing() {
-  // ...existing code...
-  const handleSignOut = async () => {
-    await signOut();
-  };
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isYearly, setIsYearly] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
-  const [isAuth0ModalOpen, setIsAuth0ModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{
     name: string;
@@ -27,20 +23,15 @@ export default function Landing() {
 
   const handleGetStarted = () => {
     if (!user) {
-      setIsAuth0ModalOpen(true);
+      setIsAuthModalOpen(true);
       return;
     }
-    setSelectedPlan({
-      name: 'Professional',
-      price: isYearly ? 500 : 50,
-      interval: isYearly ? 'year' : 'month'
-    });
-    setIsPaymentModalOpen(true);
+    navigate('/dashboard');
   };
 
   const handleSelectPlan = async (plan: string, price: number) => {
     if (!user) {
-      setIsAuth0ModalOpen(true);
+      setIsAuthModalOpen(true);
       return;
     }
     setSelectedPlan({
@@ -52,13 +43,18 @@ export default function Landing() {
   };
 
   const handleAuthSuccess = () => {
-    setIsAuth0ModalOpen(false);
-    toast.success('Successfully signed in!');
-    navigate('/dashboard');
+    setIsAuthModalOpen(false);
+    toast.success('Welcome! Please select a plan to get started.');
+    // Don't auto-navigate, let them choose a plan first
   };
 
-  const handleDashboardClick = () => {
-    navigate('/dashboard');
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success('Signed out successfully');
+    } catch (error) {
+      toast.error('Error signing out');
+    }
   };
 
   const navItems = [
@@ -264,7 +260,7 @@ export default function Landing() {
                 </>
               ) : (
                 <button
-                  onClick={() => setIsAuth0ModalOpen(true)}
+                  onClick={() => setIsAuthModalOpen(true)}
                   className="px-4 py-1.5 text-sm font-semibold text-white bg-blue-900 dark:bg-yellow-400 dark:text-blue-900 rounded-lg hover:bg-blue-800 dark:hover:bg-yellow-300 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
                   style={{ animationDelay: '600ms' }}
                 >
@@ -314,7 +310,7 @@ export default function Landing() {
                 <button
                   onClick={() => {
                     setIsMobileMenuOpen(false);
-                    setIsAuth0ModalOpen(true);
+                    setIsAuthModalOpen(true);
                   }}
                   className="block w-full text-left px-4 py-2 text-sm font-semibold text-white bg-blue-900 dark:bg-yellow-400 dark:text-blue-900 rounded-lg hover:bg-blue-800 dark:hover:bg-yellow-300 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
                 >
@@ -336,27 +332,18 @@ export default function Landing() {
             Empowering businesses with innovative HR solutions to streamline processes and enhance productivity.
           </p>
           <div className="space-x-4 animate-slide-up" style={{ animationDelay: '400ms' }}>
-            {user ? (
-              <Link
-                to="/dashboard"
-                className="inline-block px-6 py-3 text-base md:text-lg font-medium text-white bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 rounded-lg transition-all hover-lift animate-pulse-glow"
-              >
-                Go to Dashboard
-              </Link>
-            ) : (
-              <button
-                onClick={() => setIsAuth0ModalOpen(true)}
-                className="inline-block px-6 py-3 text-base md:text-lg font-medium text-white bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 rounded-lg transition-all hover-lift animate-pulse-glow"
-              >
-                Get Started
-              </button>
-            )}
+            <button
+              onClick={handleGetStarted}
+              className="inline-block px-6 py-3 text-base md:text-lg font-medium text-white bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 rounded-lg transition-all hover-lift animate-pulse-glow"
+            >
+              {user ? 'Go to Dashboard' : 'Get Started'}
+            </button>
           </div>
         </div>
       </div>
 
       {/* Features Section */}
-      <section id="features" className="py-16 md:py-20 bg-white">
+      <section id="features" className="py-16 md:py-20 bg-white dark:bg-blue-950">
         <div className="container mx-auto px-4">
           <h2 className="text-2xl md:text-3xl font-bold text-blue-900 dark:text-yellow-300 text-center mb-8 md:mb-12 animate-slide-up">Features</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
@@ -378,10 +365,9 @@ export default function Landing() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-16 md:py-20 bg-white/5">
-        <div className="container mx-auto px-4 dark:bg-blue-950 rounded-xl">
+      <section id="pricing" className="py-16 md:py-20 bg-white/5 dark:bg-blue-950">
+        <div className="container mx-auto px-4">
           <div className="text-center mb-8 md:mb-12">
-            <h2 className="text-2xl md:text-3xl font-bold text-orange-600 mb-4 animate-slide-up">Simple Pricing</h2>
             <h2 className="text-2xl md:text-3xl font-bold text-blue-900 dark:text-yellow-300 mb-4 animate-slide-up">Simple Pricing</h2>
             
             {/* Billing Toggle */}
@@ -513,7 +499,7 @@ export default function Landing() {
                 </ul>
               </div>
               <div className="bg-white dark:bg-blue-900 p-6 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
-                <h3 className="text-lg md:text-xl font-semibold text-blue-900 dark:text-yellow-200 mb-4">Our Impact</h3>
+                <h3 className="text-lg md:text-xl font-semibold text-blue-blue-900 dark:text-yellow-200 mb-4">Our Impact</h3>
                 <ul className="text-blue-800 dark:text-yellow-100 space-y-2 text-sm md:text-base">
                   <li><i className="fas fa-check mr-2 text-yellow-400"></i>Streamlined Processes</li>
                   <li><i className="fas fa-check mr-2 text-yellow-400"></i>Enhanced Productivity</li>
@@ -614,9 +600,9 @@ export default function Landing() {
       </section>
 
       {/* Auth Modal */}
-      <Auth0Modal
-        isOpen={isAuth0ModalOpen}
-        onClose={() => setIsAuth0ModalOpen(false)}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
         onSuccess={handleAuthSuccess}
       />
 
