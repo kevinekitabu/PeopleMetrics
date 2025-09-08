@@ -36,68 +36,69 @@ Deno.serve(async (req) => {
 
     console.log('Checking payment status for:', CheckoutRequestID);
 
-    // Query payment status from database
-    const { data: payment, error: queryError } = await supabase
-      .from('mpesa_payments')
+    // Check mpesa_callbacks table first
+    const { data: callbackData, error: callbackError } = await supabase
+      .from('mpesa_callbacks')
       .select('*')
       .eq('checkout_request_id', CheckoutRequestID)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
-    if (queryError) {
-      if (queryError.code === 'PGRST116') {
-        // No record found - payment still pending
-        console.log('No payment record found, status: PENDING');
+    if (callbackError && callbackError.code !== 'PGRST116') {
+      console.error('Error checking callback:', callbackError);
+    }
+
+    if (callbackData) {
+      console.log('Found callback data:', callbackData);
+      
+      if (callbackData.result_code === 0) {
         return new Response(
           JSON.stringify({ 
-            status: 'PENDING', 
-            message: 'Payment is being processed...' 
+            status: 'COMPLETED', 
+            message: 'Payment completed successfully',
+            resultCode: callbackData.result_code,
+            resultDesc: callbackData.result_desc
+          }),
+          { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+        );
+      } else {
+        return new Response(
+          JSON.stringify({ 
+            status: 'FAILED', 
+            message: callbackData.result_desc || 'Payment failed',
+            resultCode: callbackData.result_code,
+            resultDesc: callbackData.result_desc
           }),
           { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
         );
       }
-      
-      console.error('Database query error:', queryError);
+    }
+
+    // Check subscription status as backup
+    const { data: subscriptionData, error: subscriptionError } = await supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('checkout_request_id', CheckoutRequestID)
+      .single();
+
+    if (!subscriptionError && subscriptionData?.status === 'active') {
       return new Response(
         JSON.stringify({ 
-          status: 'PENDING', 
-          message: 'Checking payment status...',
-          error: queryError.message
+          status: 'COMPLETED', 
+          message: 'Payment completed successfully' 
         }),
         { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    console.log('Payment record found:', payment);
-
-    // Return status based on database record
-    let status = 'PENDING';
-    let message = 'Payment is being processed...';
-
-    if (payment.status === 'completed') {
-      status = 'COMPLETED';
-      message = 'Payment successful!';
-    } else if (payment.status === 'failed') {
-      status = 'FAILED';
-      message = payment.result_desc || 'Payment failed';
-    } else {
-      // Still pending
-      status = 'PENDING';
-      message = 'Payment is being processed...';
-    }
-
-    const response = {
-      status: status,
-      message: message,
-      resultCode: payment.result_code,
-      amount: payment.amount,
-      phoneNumber: payment.phone_number,
-      timestamp: payment.updated_at
-    };
-
-    console.log('Returning status:', response);
-
+    // No callback found yet, payment still pending
+    console.log('No callback found yet, status: PENDING');
     return new Response(
-      JSON.stringify(response),
+      JSON.stringify({ 
+        status: 'PENDING', 
+        message: 'Payment is being processed...' 
+      }),
       { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
 

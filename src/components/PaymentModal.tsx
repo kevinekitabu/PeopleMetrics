@@ -161,9 +161,9 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       console.log('=== STARTING STATUS POLLING ===');
       console.log('CheckoutRequestID:', data.CheckoutRequestID);
 
-      // Start polling for status
+      // Start polling for status - check every 3 seconds for 2 minutes
       let attempts = 0;
-      const maxAttempts = 24; // 2 minutes
+      const maxAttempts = 40; // 2 minutes (3 seconds * 40 = 120 seconds)
 
       const pollStatus = async () => {
         try {
@@ -179,10 +179,19 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             body: JSON.stringify({ CheckoutRequestID: data.CheckoutRequestID })
           });
 
+          const statusText = await statusResponse.text();
           console.log('Status response status:', statusResponse.status);
+          console.log('Status response text:', statusText);
 
           if (statusResponse.ok) {
-            const statusData = await statusResponse.json();
+            let statusData;
+            try {
+              statusData = JSON.parse(statusText);
+            } catch (parseError) {
+              console.error('Failed to parse status response:', parseError);
+              return; // Continue polling
+            }
+            
             console.log('Status response data:', statusData);
             
             if (statusData.status === 'COMPLETED') {
@@ -242,10 +251,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               return;
             }
 
-            // Update status message for pending
-            setStatusMessage(statusData.message || 'Waiting for payment confirmation...');
+            // Update status message for pending - be more specific
+            if (statusData.message) {
+              setStatusMessage(statusData.message);
+            }
           } else {
-            console.warn('Status check failed:', statusResponse.status);
+            console.warn('Status check failed:', statusResponse.status, statusText);
           }
 
           // Stop polling if max attempts reached
@@ -281,12 +292,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         }
       };
 
-      // Start polling every 5 seconds
-      const interval = setInterval(pollStatus, 5000);
+      // Start polling every 3 seconds
+      const interval = setInterval(pollStatus, 3000);
       setPollInterval(interval);
 
-      // Initial status check after 3 seconds
-      setTimeout(pollStatus, 3000);
+      // Initial status check after 2 seconds
+      setTimeout(pollStatus, 2000);
 
     } catch (error) {
       console.error('=== PAYMENT ERROR ===', error);
