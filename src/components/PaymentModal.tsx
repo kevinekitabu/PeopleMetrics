@@ -34,6 +34,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         setPollInterval(null);
       }
     }
+    // No cleanup needed
   }, [isOpen, pollInterval]);
 
   // Countdown timer
@@ -57,7 +58,9 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       }, 1000);
     }
     
-    return () => interval && clearInterval(interval);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [paymentStatus, timeRemaining, pollInterval]);
 
   if (!isOpen) return null;
