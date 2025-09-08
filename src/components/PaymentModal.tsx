@@ -160,7 +160,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
       // Start polling for status - check every 3 seconds for 2 minutes
       let attempts = 0;
-      const maxAttempts = 40; // 2 minutes (3 seconds * 40 = 120 seconds)
+      const maxAttempts = 30; // 1.5 minutes (3 seconds * 30 = 90 seconds)
 
       const pollStatus = async () => {
         if (!isPolling) return; // Stop if polling was cancelled
@@ -188,12 +188,21 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               statusData = JSON.parse(statusText);
             } catch (parseError) {
               console.error('Failed to parse status response:', parseError);
-              return; // Continue polling
+              // Continue polling on parse error
+              if (attempts >= maxAttempts) {
+                cleanup();
+                setPaymentStatus('failed');
+                setStatusMessage('Payment verification failed');
+                toast.error('Payment verification failed');
+              }
+              return;
             }
             
             console.log('Status response data:', statusData);
+            console.log('Status source:', statusData.source);
             
             if (statusData.status === 'COMPLETED') {
+              console.log('=== PAYMENT COMPLETED - STOPPING POLL ===');
               cleanup();
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
@@ -202,6 +211,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
+                  console.log('Creating subscription for user:', user.id);
                   const { error: subscriptionError } = await supabase
                     .from('subscriptions')
                     .insert({
@@ -213,18 +223,26 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                       checkout_request_id: data.CheckoutRequestID
                     });
                   
-                  if (subscriptionError) console.error('Subscription creation error:', subscriptionError);
+                  if (subscriptionError) {
+                    console.error('Subscription creation error:', subscriptionError);
+                    // Don't fail the payment if subscription creation fails
+                    toast.success('Payment completed! Please contact support if you have issues accessing features.');
+                  } else {
+                    console.log('Subscription created successfully');
+                    toast.success('Payment completed successfully! Your subscription is now active.');
+                  }
                 }
               } catch (subError) {
                 console.error('Error creating subscription:', subError);
+                toast.success('Payment completed! Please refresh the page to access your features.');
               }
               
-              toast.success('Payment completed successfully!');
               setTimeout(() => onClose(), 3000);
               return;
             }
             
             if (statusData.status === 'FAILED') {
+              console.log('=== PAYMENT FAILED - STOPPING POLL ===');
               cleanup();
               setPaymentStatus('failed');
               setStatusMessage(statusData.message || 'Payment failed');
@@ -236,12 +254,16 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             if (statusData.message) {
               setStatusMessage(statusData.message);
             }
+            
+            console.log(`Payment still pending, attempt ${attempts}/${maxAttempts}`);
           } else {
             console.warn('Status check failed:', statusResponse.status, statusText);
+            // Don't fail immediately on HTTP errors, continue polling
           }
 
           // Stop polling if max attempts reached
           if (attempts >= maxAttempts) {
+            console.log('=== MAX ATTEMPTS REACHED - STOPPING POLL ===');
             cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
@@ -251,6 +273,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         } catch (error) {
           console.error('Status check error:', error);
           if (attempts >= maxAttempts) {
+            console.log('=== ERROR AND MAX ATTEMPTS - STOPPING POLL ===');
             cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
@@ -259,12 +282,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         }
       };
 
-      // Start polling every 3 seconds
-      const intervalId = window.setInterval(pollStatus, 3000);
+      // Start polling every 2 seconds for faster response
+      const intervalId = window.setInterval(pollStatus, 2000);
       setPollIntervalId(intervalId);
 
-      // Initial status check after 2 seconds
-      setTimeout(pollStatus, 2000);
+      // Initial status check after 1 second
+      setTimeout(pollStatus, 1000);
 
     } catch (error) {
       console.error('=== PAYMENT ERROR ===', error);
