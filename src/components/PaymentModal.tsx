@@ -22,7 +22,6 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const [timeRemaining, setTimeRemaining] = useState(120);
   const [pollIntervalId, setPollIntervalId] = useState<number | null>(null);
   const [timerIntervalId, setTimerIntervalId] = useState<number | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -32,7 +31,6 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setPhoneNumber('');
       setCheckoutRequestId(null);
       setTimeRemaining(120);
-      setIsPolling(false);
       if (pollIntervalId) {
         clearInterval(pollIntervalId);
         setPollIntervalId(null);
@@ -50,7 +48,6 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
     if (timerIntervalId) clearInterval(timerIntervalId);
     setPollIntervalId(null);
     setTimerIntervalId(null);
-    setIsPolling(false);
   }, [pollIntervalId, timerIntervalId]);
 
   // Timer management
@@ -165,17 +162,17 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setCheckoutRequestId(data.CheckoutRequestID);
       setStatusMessage('Check your phone for M-Pesa prompt...');
       toast.success('M-Pesa request sent! Check your phone.');
-      setIsPolling(true);
 
       console.log('=== STARTING STATUS POLLING ===');
       console.log('CheckoutRequestID:', data.CheckoutRequestID);
 
-      // Start polling for status - check every 3 seconds for 2 minutes
+      // Start polling for status - check every 2 seconds
       let attempts = 0;
-      const maxAttempts = 30; // 1.5 minutes (3 seconds * 30 = 90 seconds)
+      const maxAttempts = 60; // 2 minutes (2 seconds * 60 = 120 seconds)
+      let isPolling = true;
 
       const pollStatus = async () => {
-        if (!isPolling) return; // Stop if polling was cancelled
+        if (!isPolling) return;
         
         try {
           attempts++;
@@ -189,7 +186,6 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             },
             body: JSON.stringify({ 
               CheckoutRequestID: data.CheckoutRequestID,
-              timestamp: new Date().toISOString()
             })
           });
 
@@ -219,6 +215,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             if (statusData.status === 'COMPLETED') {
               console.log('=== PAYMENT COMPLETED - STOPPING POLL ===');
               console.log('Payment completion source:', statusData.source);
+              isPolling = false;
               cleanup();
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
@@ -273,6 +270,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             if (statusData.status === 'FAILED') {
               console.log('=== PAYMENT FAILED - STOPPING POLL ===');
               console.log('Payment failure source:', statusData.source);
+              isPolling = false;
               cleanup();
               setPaymentStatus('failed');
               setStatusMessage(statusData.message || 'Payment failed');
@@ -294,6 +292,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           // Stop polling if max attempts reached
           if (attempts >= maxAttempts) {
             console.log('=== MAX ATTEMPTS REACHED - STOPPING POLL ===');
+            isPolling = false;
             cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Payment request timed out');
@@ -304,6 +303,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
           console.error('Status check error:', error);
           if (attempts >= maxAttempts) {
             console.log('=== ERROR AND MAX ATTEMPTS - STOPPING POLL ===');
+            isPolling = false;
             cleanup();
             setPaymentStatus('failed');
             setStatusMessage('Failed to verify payment');
@@ -312,12 +312,12 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         }
       };
 
-      // Start polling every 2 seconds for faster response
+      // Start polling every 2 seconds
       const intervalId = window.setInterval(pollStatus, 2000);
       setPollIntervalId(intervalId);
 
-      // Initial status check after 1 second
-      setTimeout(pollStatus, 1000);
+      // Initial status check immediately
+      pollStatus();
 
     } catch (error) {
       console.error('=== PAYMENT ERROR ===', error);
