@@ -21,6 +21,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(120);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -34,16 +35,21 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
         clearInterval(pollInterval);
         setPollInterval(null);
       }
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
     }
-    // No cleanup needed
-  }, [isOpen, pollInterval]);
+  }, [isOpen, pollInterval, timerInterval]);
 
   // Countdown timer
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
     
     if (paymentStatus === 'processing' && timeRemaining > 0) {
-      interval = setInterval(() => {
+      const interval = setInterval(() => {
         setTimeRemaining(prev => {
           if (prev <= 1) {
             setPaymentStatus('failed');
@@ -52,17 +58,30 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               clearInterval(pollInterval);
               setPollInterval(null);
             }
+            if (timerInterval) {
+              clearInterval(timerInterval);
+              setTimerInterval(null);
+            }
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
+      setTimerInterval(interval);
+    } else if (paymentStatus !== 'processing') {
+      // Stop timer when payment is no longer processing
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
+      }
     }
     
     return () => {
-      if (interval) clearInterval(interval);
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
     };
-  }, [paymentStatus, timeRemaining, pollInterval]);
+  }, [paymentStatus, timeRemaining, pollInterval, timerInterval]);
 
   if (!isOpen) return null;
 
@@ -167,6 +186,16 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             console.log('Status response data:', statusData);
             
             if (statusData.status === 'COMPLETED') {
+              // Stop all timers immediately
+              if (pollInterval) {
+                clearInterval(pollInterval);
+                setPollInterval(null);
+              }
+              if (timerInterval) {
+                clearInterval(timerInterval);
+                setTimerInterval(null);
+              }
+              
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
               
@@ -192,22 +221,24 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
               }
               
               toast.success('Payment completed successfully!');
-              if (pollInterval) {
-                clearInterval(pollInterval);
-                setPollInterval(null);
-              }
               setTimeout(() => onClose(), 3000);
               return;
             }
             
             if (statusData.status === 'FAILED') {
-              setPaymentStatus('failed');
-              setStatusMessage(statusData.message || 'Payment failed');
-              toast.error(statusData.message || 'Payment failed');
+              // Stop all timers
               if (pollInterval) {
                 clearInterval(pollInterval);
                 setPollInterval(null);
               }
+              if (timerInterval) {
+                clearInterval(timerInterval);
+                setTimerInterval(null);
+              }
+              
+              setPaymentStatus('failed');
+              setStatusMessage(statusData.message || 'Payment failed');
+              toast.error(statusData.message || 'Payment failed');
               return;
             }
 
@@ -219,25 +250,33 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
 
           // Stop polling if max attempts reached
           if (attempts >= maxAttempts) {
-            setPaymentStatus('failed');
-            setStatusMessage('Payment request timed out');
-            toast.error('Payment request timed out');
             if (pollInterval) {
               clearInterval(pollInterval);
               setPollInterval(null);
             }
+            if (timerInterval) {
+              clearInterval(timerInterval);
+              setTimerInterval(null);
+            }
+            setPaymentStatus('failed');
+            setStatusMessage('Payment request timed out');
+            toast.error('Payment request timed out');
           }
 
         } catch (error) {
           console.error('Status check error:', error);
           if (attempts >= maxAttempts) {
-            setPaymentStatus('failed');
-            setStatusMessage('Failed to verify payment');
-            toast.error('Failed to verify payment');
             if (pollInterval) {
               clearInterval(pollInterval);
               setPollInterval(null);
             }
+            if (timerInterval) {
+              clearInterval(timerInterval);
+              setTimerInterval(null);
+            }
+            setPaymentStatus('failed');
+            setStatusMessage('Failed to verify payment');
+            toast.error('Failed to verify payment');
           }
         }
       };
@@ -397,6 +436,10 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                   if (pollInterval) {
                     clearInterval(pollInterval);
                     setPollInterval(null);
+                  }
+                  if (timerInterval) {
+                    clearInterval(timerInterval);
+                    setTimerInterval(null);
                   }
                 }}
                 className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
