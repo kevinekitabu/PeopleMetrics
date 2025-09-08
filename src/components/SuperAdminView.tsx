@@ -32,6 +32,18 @@ interface PaymentCallback {
   raw_response: any;
 }
 
+interface MpesaPayment {
+  id: string;
+  checkout_request_id: string;
+  phone_number: string;
+  amount: number;
+  status: string;
+  result_code?: number;
+  result_desc?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Report {
   id: string;
   user_id: string;
@@ -47,22 +59,27 @@ interface SystemStats {
   totalReports: number;
   totalRevenue: number;
   adminUsers: number;
+  totalPayments: number;
+  successfulPayments: number;
 }
 
 export default function SuperAdminView() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'subscriptions' | 'payments' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'subscriptions' | 'payments' | 'mpesa-payments' | 'reports'>('overview');
   const [loading, setLoading] = useState(false);
   const [systemStats, setSystemStats] = useState<SystemStats>({
     totalUsers: 0,
     activeSubscriptions: 0,
     totalReports: 0,
     totalRevenue: 0,
-    adminUsers: 0
+    adminUsers: 0,
+    totalPayments: 0,
+    successfulPayments: 0
   });
   const [users, setUsers] = useState<User[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [payments, setPayments] = useState<PaymentCallback[]>([]);
+  const [mpesaPayments, setMpesaPayments] = useState<MpesaPayment[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -72,6 +89,7 @@ export default function SuperAdminView() {
       loadUsers();
       loadSubscriptions();
       loadPayments();
+      loadMpesaPayments();
       loadReports();
     }
   }, [user]);
@@ -102,6 +120,16 @@ export default function SuperAdminView() {
         .from('reports')
         .select('*', { count: 'exact', head: true });
 
+      // Get payment statistics
+      const { count: totalPayments } = await supabase
+        .from('mpesa_payments')
+        .select('*', { count: 'exact', head: true });
+
+      const { count: successfulPayments } = await supabase
+        .from('mpesa_payments')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'completed');
+
       // Calculate total revenue (sum of all successful payments)
       const { data: successfulPayments } = await supabase
         .from('subscriptions')
@@ -126,7 +154,9 @@ export default function SuperAdminView() {
         activeSubscriptions: activeSubscriptions || 0,
         totalReports: totalReports || 0,
         totalRevenue,
-        adminUsers: adminUsers || 0
+        adminUsers: adminUsers || 0,
+        totalPayments: totalPayments || 0,
+        successfulPayments: successfulPayments || 0
       });
     } catch (error) {
       console.error('Error loading system stats:', error);
@@ -196,6 +226,22 @@ export default function SuperAdminView() {
     } catch (error) {
       console.error('Error loading payments:', error);
       toast.error('Failed to load payment history');
+    }
+  };
+
+  const loadMpesaPayments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mpesa_payments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      setMpesaPayments(data || []);
+    } catch (error) {
+      console.error('Error loading M-Pesa payments:', error);
+      toast.error('Failed to load M-Pesa payments');
     }
   };
 
@@ -276,6 +322,12 @@ export default function SuperAdminView() {
     payment.result_desc.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const filteredMpesaPayments = mpesaPayments.filter(payment => 
+    payment.checkout_request_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    payment.phone_number.includes(searchTerm) ||
+    payment.status.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const filteredReports = reports.filter(report => 
     report.user_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     report.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -318,6 +370,7 @@ export default function SuperAdminView() {
               loadUsers();
               loadSubscriptions();
               loadPayments();
+              loadMpesaPayments();
               loadReports();
             }}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
@@ -334,7 +387,8 @@ export default function SuperAdminView() {
             { id: 'overview', label: 'Overview', icon: '📊' },
             { id: 'users', label: 'Users', icon: '👥' },
             { id: 'subscriptions', label: 'Subscriptions', icon: '💳' },
-            { id: 'payments', label: 'Payments', icon: '💰' },
+            { id: 'payments', label: 'Callbacks', icon: '📞' },
+            { id: 'mpesa-payments', label: 'M-Pesa Payments', icon: '💰' },
             { id: 'reports', label: 'Reports', icon: '📄' }
           ].map((tab) => (
             <button
@@ -361,7 +415,7 @@ export default function SuperAdminView() {
 
       {/* Overview Tab */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-6">
           <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg">
             <div className="flex items-center">
               <div className="text-blue-600 dark:text-blue-400 text-2xl mr-3">👥</div>
@@ -408,6 +462,26 @@ export default function SuperAdminView() {
               <div>
                 <p className="text-sm font-medium text-red-600 dark:text-red-400">Admin Users</p>
                 <p className="text-2xl font-bold text-red-900 dark:text-red-100">{systemStats.adminUsers}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-lg">
+            <div className="flex items-center">
+              <div className="text-indigo-600 dark:text-indigo-400 text-2xl mr-3">📱</div>
+              <div>
+                <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">Total Payments</p>
+                <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{systemStats.totalPayments}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-lg">
+            <div className="flex items-center">
+              <div className="text-emerald-600 dark:text-emerald-400 text-2xl mr-3">✅</div>
+              <div>
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Successful Payments</p>
+                <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">{systemStats.successfulPayments}</p>
               </div>
             </div>
           </div>
@@ -551,7 +625,7 @@ export default function SuperAdminView() {
         </div>
       )}
 
-      {/* Payments Tab */}
+      {/* Callbacks Tab */}
       {activeTab === 'payments' && (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -590,6 +664,74 @@ export default function SuperAdminView() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {payment.result_desc}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {formatDate(payment.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* M-Pesa Payments Tab */}
+      {activeTab === 'mpesa-payments' && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Phone Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Request ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Result
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Date
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredMpesaPayments.map((payment) => (
+                <tr key={payment.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {payment.phone_number}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900 dark:text-gray-100">
+                      ${payment.amount}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      payment.status === 'completed'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                        : payment.status === 'pending'
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                        : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                    }`}>
+                      {payment.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                      {payment.checkout_request_id.slice(-8)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {payment.result_desc || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {formatDate(payment.created_at)}
