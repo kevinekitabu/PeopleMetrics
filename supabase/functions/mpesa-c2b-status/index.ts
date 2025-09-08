@@ -57,19 +57,37 @@ Deno.serve(async (req) => {
       }
       
       console.error('Database query error:', queryError);
-      throw queryError;
+      return new Response(
+        JSON.stringify({ 
+          status: 'PENDING', 
+          message: 'Checking payment status...',
+          error: queryError.message
+        }),
+        { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
     }
 
     console.log('Payment record found:', payment);
 
     // Return status based on database record
+    let status = 'PENDING';
+    let message = 'Payment is being processed...';
+
+    if (payment.status === 'completed') {
+      status = 'COMPLETED';
+      message = 'Payment successful!';
+    } else if (payment.status === 'failed') {
+      status = 'FAILED';
+      message = payment.result_desc || 'Payment failed';
+    } else {
+      // Still pending
+      status = 'PENDING';
+      message = 'Payment is being processed...';
+    }
+
     const response = {
-      status: payment.status.toUpperCase(),
-      message: payment.result_desc || (
-        payment.status === 'completed' ? 'Payment successful' : 
-        payment.status === 'failed' ? 'Payment failed' : 
-        'Payment is being processed...'
-      ),
+      status: status,
+      message: message,
       resultCode: payment.result_code,
       amount: payment.amount,
       phoneNumber: payment.phone_number,

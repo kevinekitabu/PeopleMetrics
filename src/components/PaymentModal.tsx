@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface PaymentModalProps {
@@ -168,6 +169,28 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
             if (statusData.status === 'COMPLETED') {
               setPaymentStatus('completed');
               setStatusMessage('Payment successful!');
+              
+              // Create subscription record for the user
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                  const { error: subscriptionError } = await supabase
+                    .from('subscriptions')
+                    .insert({
+                      user_id: user.id,
+                      plan: selectedPlan.name,
+                      interval: selectedPlan.interval,
+                      status: 'active',
+                      current_period_end: new Date(Date.now() + (selectedPlan.interval === 'month' ? 30 : 365) * 24 * 60 * 60 * 1000),
+                      checkout_request_id: data.CheckoutRequestID
+                    });
+                  
+                  if (subscriptionError) console.error('Subscription creation error:', subscriptionError);
+                }
+              } catch (subError) {
+                console.error('Error creating subscription:', subError);
+              }
+              
               toast.success('Payment completed successfully!');
               if (pollInterval) {
                 clearInterval(pollInterval);
