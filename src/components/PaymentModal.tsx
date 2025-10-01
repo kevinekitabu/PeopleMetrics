@@ -19,7 +19,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
   const [phoneNumber, setPhoneNumber] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(120);
+  const [timeRemaining, setTimeRemaining] = useState(300);
   const [pollIntervalId, setPollIntervalId] = useState<number | null>(null);
   const [timerIntervalId, setTimerIntervalId] = useState<number | null>(null);
 
@@ -30,7 +30,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       setStatusMessage('');
       setPhoneNumber('');
       setCheckoutRequestId(null);
-      setTimeRemaining(120);
+      setTimeRemaining(300);
       if (pollIntervalId) {
         clearInterval(pollIntervalId);
         setPollIntervalId(null);
@@ -99,7 +99,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
     try {
       setPaymentStatus('processing');
       setStatusMessage('Initiating M-Pesa payment...');
-      setTimeRemaining(120);
+      setTimeRemaining(300);
 
       console.log('=== CALLING M-PESA API ===');
       
@@ -166,9 +166,9 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
       console.log('=== STARTING STATUS POLLING ===');
       console.log('CheckoutRequestID:', data.CheckoutRequestID);
 
-      // Start polling for status - check every 2 seconds
+      // Start polling for status - check every 5 seconds
       let attempts = 0;
-      const maxAttempts = 24; // 2 minutes (5 seconds * 24 = 120 seconds)
+      const maxAttempts = 60; // 5 minutes (5 seconds * 60 = 300 seconds)
       let isPolling = true;
 
       const pollStatus = async () => {
@@ -440,7 +440,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div 
                     className="bg-green-600 h-full rounded-full transition-all duration-1000"
-                    style={{ width: `${((120 - timeRemaining) / 120) * 100}%` }}
+                    style={{ width: `${((300 - timeRemaining) / 300) * 100}%` }}
                   ></div>
                 </div>
                 <div className="text-sm text-gray-600 dark:text-gray-300">
@@ -465,7 +465,7 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                   setPaymentStatus('idle');
                   setStatusMessage('');
                   setCheckoutRequestId(null);
-                  setTimeRemaining(120);
+                  setTimeRemaining(300);
                 }}
                 className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
               >

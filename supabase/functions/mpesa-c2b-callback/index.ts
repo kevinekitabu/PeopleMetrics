@@ -98,31 +98,37 @@ Deno.serve(async (req) => {
       console.log('✅ Payment status updated to:', status);
     }
 
-    // If successful, handle subscription
+    // If successful, handle subscription creation
     if (ResultCode === 0) {
       console.log('Payment successful - processing subscription');
-      
-      // Get payment details
+
+      // Get payment details to find the phone number
       const { data: paymentData } = await supabase
         .from('mpesa_payments')
         .select('*')
         .eq('checkout_request_id', CheckoutRequestID)
-        .single();
+        .maybeSingle();
 
       if (paymentData) {
-        console.log('Found payment data for subscription processing');
-        
+        console.log('Found payment data:', paymentData);
+
         // Check if subscription already exists
         const { data: existingSub } = await supabase
           .from('subscriptions')
           .select('id')
           .eq('checkout_request_id', CheckoutRequestID)
-          .single();
+          .maybeSingle();
 
-        if (!existingSub) {
-          // Create subscription - we'll let the frontend handle this
-          console.log('Subscription will be created by frontend');
+        if (existingSub) {
+          console.log('Subscription already exists:', existingSub.id);
+        } else {
+          console.log('No existing subscription found. Frontend will create subscription after payment confirmation.');
+          // Note: The frontend (PaymentModal) will create the subscription record
+          // when it detects the payment is completed. This is by design to ensure
+          // the correct user_id is associated with the subscription.
         }
+      } else {
+        console.log('No payment data found for CheckoutRequestID:', CheckoutRequestID);
       }
     }
 
