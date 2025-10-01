@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link as ScrollLink } from 'react-scroll';
 import { useAuth } from '../components/AuthProvider';
 import PaymentModal from '../components/PaymentModal';
 import AuthModal from '../components/AuthModal';
 import ThemeToggle from '../components/ThemeToggle';
+import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 
@@ -15,18 +16,74 @@ export default function Landing() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [hasSubscription, setHasSubscription] = useState<boolean>(false);
+  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<{
     name: string;
     price: number;
     interval: 'month' | 'year';
   } | null>(null);
 
+  useEffect(() => {
+    const checkSubscription = async () => {
+      if (!user) {
+        setHasSubscription(false);
+        return;
+      }
+
+      setIsCheckingSubscription(true);
+      try {
+        // Check if user is admin
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        // Admins always have access
+        if (profileData?.is_admin) {
+          setHasSubscription(true);
+          setIsCheckingSubscription(false);
+          return;
+        }
+
+        // Check for active subscription
+        const { data: subscriptionData } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .gt('current_period_end', new Date().toISOString())
+          .maybeSingle();
+
+        setHasSubscription(!!subscriptionData);
+      } catch (error) {
+        console.error('Error checking subscription:', error);
+        setHasSubscription(false);
+      } finally {
+        setIsCheckingSubscription(false);
+      }
+    };
+
+    checkSubscription();
+  }, [user]);
+
   const handleGetStarted = () => {
     if (!user) {
       setIsAuthModalOpen(true);
       return;
     }
-    navigate('/dashboard');
+
+    if (hasSubscription) {
+      navigate('/dashboard');
+    } else {
+      // Scroll to pricing section if no subscription
+      const pricingSection = document.getElementById('pricing');
+      if (pricingSection) {
+        pricingSection.scrollIntoView({ behavior: 'smooth' });
+      }
+      toast('Please select a plan to access the dashboard');
+    }
   };
 
   const handleSelectPlan = async (plan: string, price: number) => {
@@ -42,16 +99,35 @@ export default function Landing() {
     setIsPaymentModalOpen(true);
   };
 
-  const handleAuthSuccess = () => {
+  const handleAuthSuccess = async () => {
     setIsAuthModalOpen(false);
-    toast.success('Welcome! Please select a plan below to get started.');
-    // Scroll to pricing section after successful auth
-    setTimeout(() => {
-      const pricingSection = document.getElementById('pricing');
-      if (pricingSection) {
-        pricingSection.scrollIntoView({ behavior: 'smooth' });
+
+    // Recheck subscription after auth
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      // Check if user has subscription
+      const { data: subscriptionData } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .eq('status', 'active')
+        .gt('current_period_end', new Date().toISOString())
+        .maybeSingle();
+
+      if (subscriptionData) {
+        toast.success('Welcome back!');
+        navigate('/dashboard');
+      } else {
+        toast.success('Welcome! Please select a plan below to get started.');
+        // Scroll to pricing section after successful auth
+        setTimeout(() => {
+          const pricingSection = document.getElementById('pricing');
+          if (pricingSection) {
+            pricingSection.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 1000);
       }
-    }, 1000);
+    }
   };
 
   const handleSignOut = async () => {
@@ -249,13 +325,27 @@ export default function Landing() {
               <ThemeToggle />
               {user ? (
                 <>
-                  <Link
-                    to="/dashboard"
-                    className="px-4 py-1.5 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    style={{ animationDelay: '600ms' }}
-                  >
-                    Dashboard
-                  </Link>
+                  {hasSubscription ? (
+                    <Link
+                      to="/dashboard"
+                      className="px-4 py-1.5 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                      style={{ animationDelay: '600ms' }}
+                    >
+                      Dashboard
+                    </Link>
+                  ) : (
+                    <ScrollLink
+                      to="pricing"
+                      spy={true}
+                      smooth={true}
+                      offset={-64}
+                      duration={500}
+                      className="cursor-pointer px-4 py-1.5 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                      style={{ animationDelay: '600ms' }}
+                    >
+                      Get Subscription
+                    </ScrollLink>
+                  )}
                   <button
                     onClick={handleSignOut}
                     className="px-4 py-1.5 text-sm font-semibold text-white bg-blue-900 dark:bg-yellow-400 dark:text-blue-900 rounded-lg hover:bg-blue-800 dark:hover:bg-yellow-300 transition-all hover-lift animate-fade-in focus:outline-none focus:ring-2 focus:ring-yellow-400"
@@ -295,13 +385,27 @@ export default function Landing() {
               ))}
               {user ? (
                 <>
-                  <Link
-                    to="/dashboard"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className="block px-4 py-2 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  >
-                    Dashboard
-                  </Link>
+                  {hasSubscription ? (
+                    <Link
+                      to="/dashboard"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="block px-4 py-2 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    >
+                      Dashboard
+                    </Link>
+                  ) : (
+                    <ScrollLink
+                      to="pricing"
+                      spy={true}
+                      smooth={true}
+                      offset={-64}
+                      duration={500}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="cursor-pointer block px-4 py-2 text-sm font-semibold text-blue-900 dark:text-yellow-200 bg-yellow-200 dark:bg-blue-800 rounded-lg hover:bg-yellow-300 dark:hover:bg-yellow-700 transition-all focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    >
+                      Get Subscription
+                    </ScrollLink>
+                  )}
                   <button
                     onClick={() => {
                       setIsMobileMenuOpen(false);
@@ -342,7 +446,7 @@ export default function Landing() {
               onClick={handleGetStarted}
               className="inline-block px-6 py-3 text-base md:text-lg font-medium text-white bg-yellow-400 hover:bg-yellow-500 dark:bg-yellow-500 dark:hover:bg-yellow-400 rounded-lg transition-all hover-lift animate-pulse-glow"
             >
-              {user ? 'Go to Dashboard' : 'Get Started'}
+              {user ? (hasSubscription ? 'Go to Dashboard' : 'Choose a Plan') : 'Get Started'}
             </button>
           </div>
         </div>
