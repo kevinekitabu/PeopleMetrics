@@ -40,6 +40,8 @@ interface MpesaPayment {
   status: string;
   result_code?: number;
   result_desc?: string;
+  mpesa_receipt_number?: string;
+  transaction_date?: string;
   created_at: string;
   updated_at: string;
 }
@@ -91,6 +93,52 @@ export default function SuperAdminView() {
       loadPayments();
       loadMpesaPayments();
       loadReports();
+
+      // Set up real-time subscriptions for automatic updates
+      const mpesaPaymentsChannel = supabase
+        .channel('mpesa_payments_changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'mpesa_payments' },
+          (payload) => {
+            console.log('M-Pesa payment updated:', payload);
+            loadMpesaPayments();
+            loadSystemStats();
+          }
+        )
+        .subscribe();
+
+      const subscriptionsChannel = supabase
+        .channel('subscriptions_changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'subscriptions' },
+          (payload) => {
+            console.log('Subscription updated:', payload);
+            loadSubscriptions();
+            loadSystemStats();
+          }
+        )
+        .subscribe();
+
+      const callbacksChannel = supabase
+        .channel('callbacks_changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'mpesa_callbacks' },
+          (payload) => {
+            console.log('Callback received:', payload);
+            loadPayments();
+          }
+        )
+        .subscribe();
+
+      // Cleanup subscriptions on unmount
+      return () => {
+        supabase.removeChannel(mpesaPaymentsChannel);
+        supabase.removeChannel(subscriptionsChannel);
+        supabase.removeChannel(callbacksChannel);
+      };
     }
   }, [user]);
 
@@ -696,6 +744,9 @@ export default function SuperAdminView() {
                   Request ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  M-Pesa Receipt
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Result
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -731,6 +782,15 @@ export default function SuperAdminView() {
                     <div className="text-xs font-mono text-gray-500 dark:text-gray-400">
                       {payment.checkout_request_id.slice(-8)}
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {payment.mpesa_receipt_number ? (
+                      <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                        {payment.mpesa_receipt_number}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-400 dark:text-gray-500">N/A</div>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {payment.result_desc || 'N/A'}

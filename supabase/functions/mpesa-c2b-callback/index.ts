@@ -65,29 +65,53 @@ Deno.serve(async (req) => {
 
     // Update payment status
     const status = ResultCode === 0 ? 'completed' : 'failed';
-    
+
+    // Extract M-Pesa receipt number and transaction date from callback metadata
+    let mpesaReceiptNumber = null;
+    let transactionDate = null;
+
+    if (ResultCode === 0 && CallbackMetadata && CallbackMetadata.Item) {
+      const items = CallbackMetadata.Item;
+      const receiptItem = items.find((item: any) => item.Name === 'MpesaReceiptNumber');
+      const dateItem = items.find((item: any) => item.Name === 'TransactionDate');
+
+      mpesaReceiptNumber = receiptItem?.Value || null;
+      transactionDate = dateItem?.Value?.toString() || null;
+
+      console.log('Extracted M-Pesa Receipt Number:', mpesaReceiptNumber);
+      console.log('Extracted Transaction Date:', transactionDate);
+    }
+
     const { data: updatedPayment, error: paymentError } = await supabase
       .from('mpesa_payments')
       .update({
         status: status,
         result_code: ResultCode,
         result_desc: ResultDesc,
+        mpesa_receipt_number: mpesaReceiptNumber,
+        transaction_date: transactionDate,
         updated_at: new Date().toISOString()
       })
-      .eq('checkout_request_id', CheckoutRequestID);
+      .eq('checkout_request_id', CheckoutRequestID)
+      .select()
+      .maybeSingle();
 
     if (paymentError) {
       console.error('Error updating payment:', paymentError);
       // Try to find and update by merchant_request_id as fallback
-      const { error: fallbackError } = await supabase
+      const { data: fallbackPayment, error: fallbackError } = await supabase
         .from('mpesa_payments')
         .update({
           status: status,
           result_code: ResultCode,
           result_desc: ResultDesc,
+          mpesa_receipt_number: mpesaReceiptNumber,
+          transaction_date: transactionDate,
           updated_at: new Date().toISOString()
         })
-        .eq('merchant_request_id', MerchantRequestID);
+        .eq('merchant_request_id', MerchantRequestID)
+        .select()
+        .maybeSingle();
       
       if (fallbackError) {
         console.error('Fallback update also failed:', fallbackError);
