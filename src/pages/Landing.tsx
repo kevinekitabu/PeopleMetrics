@@ -724,6 +724,27 @@ export default function Landing() {
             setIsPaymentModalOpen(false);
             setSelectedPlan(null);
           }}
+          onPaymentSuccess={async () => {
+            // Refresh subscription status
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            if (currentUser) {
+              const { data: subscriptionData } = await supabase
+                .from('subscriptions')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .eq('status', 'active')
+                .gt('current_period_end', new Date().toISOString())
+                .maybeSingle();
+
+              if (subscriptionData) {
+                setHasSubscription(true);
+                toast.success('Redirecting to dashboard...');
+                setTimeout(() => {
+                  navigate('/dashboard');
+                }, 1500);
+              }
+            }
+          }}
           selectedPlan={selectedPlan}
         />
       )}

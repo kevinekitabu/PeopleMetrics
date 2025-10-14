@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onPaymentSuccess?: () => void;
   selectedPlan: {
     name: string;
     price: number;
@@ -14,7 +15,7 @@ interface PaymentModalProps {
 
 type PaymentStatus = 'idle' | 'processing' | 'completed' | 'failed';
 
-export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentModalProps) {
+export default function PaymentModal({ isOpen, onClose, onPaymentSuccess, selectedPlan }: PaymentModalProps) {
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -262,8 +263,13 @@ export default function PaymentModal({ isOpen, onClose, selectedPlan }: PaymentM
                 console.error('Error creating subscription:', subError);
                 toast.success('Payment completed! Please refresh the page to access your features.');
               }
-              
-              setTimeout(() => onClose(), 3000);
+
+              // Call the success callback to trigger navigation
+              if (onPaymentSuccess) {
+                onPaymentSuccess();
+              }
+
+              setTimeout(() => onClose(), 2000);
               return;
             }
             
