@@ -4,7 +4,7 @@ import { Buffer } from 'npm:buffer@6.0.3';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
 const MPESA_CONSUMER_KEY = 'IIOfklBxQmfrwVOynZJbQw5wCn3GJpCE';
@@ -56,40 +56,53 @@ Deno.serve(async (req) => {
 
     console.log('Checking status for:', CheckoutRequestID);
 
-    // STEP 1: Check database first (fastest)
-    const { data: callbackData } = await supabase
-      .from('mpesa_callbacks')
-      .select('result_code, result_desc')
+    // STEP 1: Check payment table first (primary source)
+    const { data: paymentData, error: paymentError } = await supabase
+      .from('mpesa_payments')
+      .select('status, result_code, result_desc, mpesa_receipt_number, transaction_date')
       .eq('checkout_request_id', CheckoutRequestID)
-      .single();
+      .maybeSingle();
 
-    if (callbackData) {
-      console.log('Found callback in database:', callbackData);
-      
-      const status = callbackData.result_code === 0 ? 'COMPLETED' : 'FAILED';
-      const message = callbackData.result_desc || (status === 'COMPLETED' ? 'Payment successful' : 'Payment failed');
-      
+    console.log('Payment data from database:', paymentData);
+    console.log('Payment error:', paymentError);
+
+    if (paymentData && paymentData.status !== 'pending') {
+      console.log('Found payment with status:', paymentData.status);
+
+      const status = paymentData.status === 'completed' ? 'COMPLETED' : 'FAILED';
+      const message = paymentData.result_desc || (status === 'COMPLETED' ? 'Payment successful' : 'Payment failed');
+
       return new Response(
-        JSON.stringify({ status, message }),
+        JSON.stringify({
+          status,
+          message,
+          source: 'database',
+          mpesaReceiptNumber: paymentData.mpesa_receipt_number,
+          transactionDate: paymentData.transaction_date
+        }),
         { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    // STEP 2: Check payment table
-    const { data: paymentData } = await supabase
-      .from('mpesa_payments')
-      .select('status, result_code, result_desc')
+    // STEP 2: Check callback table as backup
+    const { data: callbackData } = await supabase
+      .from('mpesa_callbacks')
+      .select('result_code, result_desc')
       .eq('checkout_request_id', CheckoutRequestID)
-      .single();
+      .maybeSingle();
 
-    if (paymentData && paymentData.status !== 'pending') {
-      console.log('Found payment status:', paymentData.status);
-      
-      const status = paymentData.status === 'completed' ? 'COMPLETED' : 'FAILED';
-      const message = paymentData.result_desc || (status === 'COMPLETED' ? 'Payment successful' : 'Payment failed');
-      
+    if (callbackData) {
+      console.log('Found callback in database:', callbackData);
+
+      const status = callbackData.result_code === 0 ? 'COMPLETED' : 'FAILED';
+      const message = callbackData.result_desc || (status === 'COMPLETED' ? 'Payment successful' : 'Payment failed');
+
       return new Response(
-        JSON.stringify({ status, message }),
+        JSON.stringify({
+          status,
+          message,
+          source: 'callback_table'
+        }),
         { headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
