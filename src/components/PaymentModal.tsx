@@ -223,23 +223,39 @@ export default function PaymentModal({ isOpen, onClose, onPaymentSuccess, select
               
               // Create subscription record for the user
               try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                  console.log('Creating subscription for user:', user.id);
-                  
-                  // Check if subscription already exists
-                  const { data: existingSubscription } = await supabase
-                    .from('subscriptions')
-                    .select('*')
-                    .eq('checkout_request_id', data.CheckoutRequestID)
-                    .maybeSingle();
-                  
-                  if (existingSubscription) {
-                    console.log('Subscription already exists:', existingSubscription.id);
-                    toast.success('Payment completed! Your subscription is active.');
-                  } else {
-                    console.log('Creating new subscription...');
-                    const { error: subscriptionError } = await supabase
+                const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+                if (userError) {
+                  console.error('Error getting user:', userError);
+                  toast.error('Authentication error. Please sign in again.');
+                  return;
+                }
+
+                if (!user) {
+                  console.error('No user found');
+                  toast.error('Please sign in to complete subscription.');
+                  return;
+                }
+
+                console.log('Creating subscription for user:', user.id);
+
+                // Check if subscription already exists
+                const { data: existingSubscription, error: checkError } = await supabase
+                  .from('subscriptions')
+                  .select('*')
+                  .eq('checkout_request_id', data.CheckoutRequestID)
+                  .maybeSingle();
+
+                if (checkError) {
+                  console.error('Error checking existing subscription:', checkError);
+                }
+
+                if (existingSubscription) {
+                  console.log('Subscription already exists:', existingSubscription.id);
+                  toast.success('Payment completed! Your subscription is active.');
+                } else {
+                  console.log('Creating new subscription...');
+                  const { error: subscriptionError, data: newSub } = await supabase
                     .from('subscriptions')
                     .insert({
                       user_id: user.id,
@@ -248,28 +264,38 @@ export default function PaymentModal({ isOpen, onClose, onPaymentSuccess, select
                       status: 'active',
                       current_period_end: new Date(Date.now() + (selectedPlan.interval === 'month' ? 30 : 365) * 24 * 60 * 60 * 1000),
                       checkout_request_id: data.CheckoutRequestID
-                    });
-                  
-                    if (subscriptionError) {
-                      console.error('Subscription creation error:', subscriptionError);
-                      toast.success('Payment completed! Please contact support if you have issues accessing features.');
+                    })
+                    .select()
+                    .single();
+
+                  if (subscriptionError) {
+                    console.error('Subscription creation error:', subscriptionError);
+                    console.error('Error details:', JSON.stringify(subscriptionError, null, 2));
+
+                    // Show specific error
+                    if (subscriptionError.code === 'PGRST301') {
+                      toast.error('Permission denied. Please contact support with payment receipt.');
                     } else {
-                      console.log('Subscription created successfully');
-                      toast.success('Payment completed successfully! Your subscription is now active.');
+                      toast.error(`Subscription error: ${subscriptionError.message}`);
                     }
+                  } else {
+                    console.log('Subscription created successfully:', newSub);
+                    toast.success('Payment completed successfully! Your subscription is now active.');
                   }
                 }
               } catch (subError) {
                 console.error('Error creating subscription:', subError);
-                toast.success('Payment completed! Please refresh the page to access your features.');
+                toast.error(`Error: ${subError instanceof Error ? subError.message : 'Unknown error'}`);
               }
 
-              // Call the success callback to trigger navigation
-              if (onPaymentSuccess) {
-                onPaymentSuccess();
-              }
-
-              setTimeout(() => onClose(), 2000);
+              // Always call success callback even if subscription had issues
+              // Payment was successful, navigation should happen
+              setTimeout(() => {
+                if (onPaymentSuccess) {
+                  onPaymentSuccess();
+                }
+                onClose();
+              }, 3000);
               return;
             }
             
