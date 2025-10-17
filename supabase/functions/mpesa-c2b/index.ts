@@ -235,6 +235,16 @@ Deno.serve(async (req) => {
 
     console.log('=== M-PESA C2B REQUEST SUCCESS ===');
     console.log('CheckoutRequestID:', stkData.CheckoutRequestID);
+    console.log('ResponseCode:', stkData.ResponseCode);
+    console.log('CustomerMessage:', stkData.CustomerMessage);
+
+    // Check if M-Pesa returned an error in the response
+    if (stkData.ResponseCode && stkData.ResponseCode !== '0') {
+      console.error('M-Pesa returned error code:', stkData.ResponseCode);
+      console.error('Error description:', stkData.ResponseDescription);
+
+      throw new Error(`M-Pesa error (${stkData.ResponseCode}): ${stkData.ResponseDescription || stkData.CustomerMessage}`);
+    }
 
     return new Response(
       JSON.stringify({
@@ -245,11 +255,11 @@ Deno.serve(async (req) => {
         ResponseDescription: stkData.ResponseDescription,
         CustomerMessage: stkData.CustomerMessage
       }),
-      { 
-        headers: { 
-          'Content-Type': 'application/json', 
-          ...corsHeaders 
-        } 
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
       }
     );
 
